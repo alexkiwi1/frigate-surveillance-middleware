@@ -77,8 +77,8 @@ class ViolationQueries:
             rp.zones,
             COALESCE(nf.employee_name, 'Unknown') as employee_name,
             COALESCE(nf.confidence::float, 0.0) as confidence,
-            rs.thumb_path as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/video/', rp.source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/thumb/', rp.source_id) as thumbnail_url,
+            CONCAT('{settings.video_api_base_url}/clip/', rp.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', rp.camera, '/', rp.timestamp, '-', rp.source_id) as snapshot_url
         FROM recent_phones rp
         LEFT JOIN nearby_faces nf USING (timestamp, camera)
@@ -292,8 +292,8 @@ class EmployeeQueries:
             ev.zones,
             ev.employee_name,
             COALESCE(ev.confidence::float, 0.0) as confidence,
-            rs.thumb_path as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/video/', ev.source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/thumb/', ev.source_id) as thumbnail_url,
+            CONCAT('{settings.video_api_base_url}/clip/', ev.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.timestamp, '-', ev.source_id) as snapshot_url
         FROM employee_violations ev
         LEFT JOIN reviewsegment rs ON 
