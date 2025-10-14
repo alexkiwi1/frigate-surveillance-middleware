@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Main application service
+  dashboard_middleware:
+    build:
+      context: .
+      target: development
+    container_name: dashboard_middleware
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - DEBUG=true
+      - DB_HOST=10.0.20.6
+      - DB_PORT=5433
+      - DB_NAME=frigate_db
+      - DB_USER=frigate
+      - DB_PASSWORD=frigate_secure_pass_2024
+      - REDIS_HOST=localhost
+      - REDIS_PORT=6379
+      - VIDEO_API_BASE_URL=http://10.0.20.6:5001
+      - TIMEZONE=Asia/Karachi
+      # Background Task Intervals (optional - defaults will be used if not set)
+      # - BACKGROUND_POLL_INTERVAL=30
+      # - BACKGROUND_STATS_REFRESH_INTERVAL=300
+      # - BACKGROUND_CACHE_CLEANUP_INTERVAL=3600
+      # - BACKGROUND_HEALTH_CHECK_INTERVAL=60
+    volumes:
+      - .:/app
+      - /var/log/dashboard_middleware:/app/logs
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: dashboard_middleware_redis
+    restart: unless-stopped
+    network_mode: host
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Redis Commander for cache management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: dashboard_middleware_redis_commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      - redis
+    profiles:
+      - debug
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: dashboard_middleware_network
