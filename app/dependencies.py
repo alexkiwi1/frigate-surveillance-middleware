@@ -1,18 +1,27 @@
 """
-FastAPI dependencies for the Frigate Dashboard Middleware.
+FastAPI dependencies following best practices.
 
-This module provides dependency injection functions for database,
-cache, and other services used throughout the API endpoints.
+This module provides dependency injection functions for database connections,
+cache operations, and parameter validation following FastAPI best practices.
 """
 
+import logging
 from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import logging
 
-from .database import DatabaseManager, get_database
-from .cache import CacheManager, get_cache
+from .database import DatabaseManager, get_database, db_manager
+from .cache import CacheManager, get_cache, cache_manager
 from .config import settings
+from .utils.errors import (
+    validate_positive_integer,
+    validate_hours_range,
+    validate_limit_range,
+    validate_camera_name,
+    validate_employee_name,
+    NotFoundError,
+    ValidationError
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +31,7 @@ security = HTTPBearer(auto_error=False)
 
 async def get_database_manager() -> DatabaseManager:
     """
-    Dependency to get database manager.
+    Dependency to get database manager with proper error handling.
     
     Returns:
         DatabaseManager instance
@@ -30,21 +39,19 @@ async def get_database_manager() -> DatabaseManager:
     Raises:
         HTTPException: If database is not available
     """
-    db = await get_database()
-    
-    if not await db.health_check():
-        logger.error("Database health check failed")
+    if not db_manager.pool:
+        logger.error("Database manager not initialized")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database service unavailable"
         )
     
-    return db
+    return db_manager
 
 
 async def get_cache_manager() -> CacheManager:
     """
-    Dependency to get cache manager.
+    Dependency to get cache manager with proper error handling.
     
     Returns:
         CacheManager instance
@@ -52,19 +59,19 @@ async def get_cache_manager() -> CacheManager:
     Raises:
         HTTPException: If cache is not available
     """
-    cache = await get_cache()
+    if not cache_manager.redis:
+        logger.error("Cache manager not connected")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cache service unavailable"
+        )
     
-    if not await cache.health_check():
-        logger.warning("Cache health check failed - continuing without cache")
-        # Don't raise exception for cache failures, just log warning
-        # The application can continue without cache
-    
-    return cache
+    return cache_manager
 
 
-async def validate_camera_name(camera: Optional[str] = None) -> Optional[str]:
+def validate_camera_parameter(camera: Optional[str] = None) -> Optional[str]:
     """
-    Validate camera name against known cameras.
+    Validate camera parameter with guard clauses.
     
     Args:
         camera: Camera name to validate
@@ -73,23 +80,23 @@ async def validate_camera_name(camera: Optional[str] = None) -> Optional[str]:
         Validated camera name or None
         
     Raises:
-        HTTPException: If camera name is invalid
+        HTTPException: If camera is invalid
     """
     if camera is None:
         return None
     
-    if camera not in settings.CAMERAS:
+    try:
+        return validate_camera_name(camera, settings.CAMERAS)
+    except NotFoundError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid camera name: {camera}. Valid cameras: {', '.join(settings.CAMERAS)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Camera '{camera}' not found. Available cameras: {', '.join(settings.CAMERAS)}"
         )
-    
-    return camera
 
 
-async def validate_limit(limit: int = 50) -> int:
+def validate_limit_parameter(limit: int = 100) -> int:
     """
-    Validate and sanitize limit parameter.
+    Validate limit parameter with guard clauses.
     
     Args:
         limit: Limit value to validate
@@ -100,24 +107,18 @@ async def validate_limit(limit: int = 50) -> int:
     Raises:
         HTTPException: If limit is invalid
     """
-    if limit < 1:
+    try:
+        return validate_limit_range(limit)
+    except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Limit must be greater than 0"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.message
         )
-    
-    if limit > 1000:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Limit cannot exceed 1000"
-        )
-    
-    return limit
 
 
-async def validate_hours(hours: int = 24) -> int:
+def validate_hours_parameter(hours: int = 24) -> int:
     """
-    Validate and sanitize hours parameter.
+    Validate hours parameter with guard clauses.
     
     Args:
         hours: Hours value to validate
@@ -128,71 +129,62 @@ async def validate_hours(hours: int = 24) -> int:
     Raises:
         HTTPException: If hours is invalid
     """
-    # Convert Decimal to int if needed (PostgreSQL returns Decimal types)
     try:
-        hours = int(hours)
-    except (ValueError, TypeError):
+        return validate_hours_range(hours)
+    except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Hours must be a valid integer"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.message
         )
-    
-    if hours < 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Hours must be greater than 0"
-        )
-    
-    if hours > 168:  # 1 week
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Hours cannot exceed 168 (1 week)"
-        )
-    
-    return hours
 
 
-async def validate_timestamp_range(
-    start_time: Optional[float] = None,
-    end_time: Optional[float] = None
-) -> tuple[Optional[float], Optional[float]]:
+def validate_employee_name_parameter(employee_name: str) -> str:
     """
-    Validate timestamp range parameters.
+    Validate employee name parameter with guard clauses.
     
     Args:
-        start_time: Start timestamp
-        end_time: End timestamp
+        employee_name: Employee name to validate
         
     Returns:
-        Tuple of validated timestamps
+        Validated employee name
         
     Raises:
-        HTTPException: If timestamps are invalid
+        HTTPException: If employee name is invalid
     """
-    if start_time is not None and start_time < 0:
+    try:
+        return validate_employee_name(employee_name)
+    except ValidationError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Start time must be a positive timestamp"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=e.message
+        )
+
+
+def validate_query_parameter(query: str) -> str:
+    """
+    Validate search query parameter with guard clauses.
+    
+    Args:
+        query: Search query to validate
+        
+    Returns:
+        Validated search query
+        
+    Raises:
+        HTTPException: If query is invalid
+    """
+    if not query or len(query.strip()) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Query must be at least 2 characters long"
         )
     
-    if end_time is not None and end_time < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="End time must be a positive timestamp"
-        )
-    
-    if start_time is not None and end_time is not None and end_time <= start_time:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="End time must be after start time"
-        )
-    
-    return start_time, end_time
+    return query.strip()
 
 
 async def get_optional_auth(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
-) -> Optional[str]:
+) -> Optional[HTTPAuthorizationCredentials]:
     """
     Optional authentication dependency.
     
@@ -200,19 +192,14 @@ async def get_optional_auth(
         credentials: HTTP authorization credentials
         
     Returns:
-        Token if provided, None otherwise
+        Credentials if provided, None otherwise
     """
-    if credentials is None:
-        return None
-    
-    # In a real implementation, you would validate the token here
-    # For now, we just return the token as-is
-    return credentials.credentials
+    return credentials
 
 
 async def require_auth(
     credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> str:
+) -> HTTPAuthorizationCredentials:
     """
     Required authentication dependency.
     
@@ -220,30 +207,78 @@ async def require_auth(
         credentials: HTTP authorization credentials
         
     Returns:
-        Validated token
+        Valid credentials
         
     Raises:
-        HTTPException: If authentication is required but not provided
+        HTTPException: If credentials are not provided
     """
-    if credentials is None:
+    if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required"
         )
     
-    # In a real implementation, you would validate the token here
-    # For now, we just return the token as-is
-    return credentials.credentials
+    return credentials
 
 
-# Common dependency combinations
+# Dependency aliases for backward compatibility
 DatabaseDep = Depends(get_database_manager)
 CacheDep = Depends(get_cache_manager)
-CameraDep = Depends(validate_camera_name)
-LimitDep = Depends(validate_limit)
-HoursDep = Depends(validate_hours)
-AuthDep = Depends(get_optional_auth)
+CameraDep = Depends(validate_camera_parameter)
+LimitDep = Depends(validate_limit_parameter)
+HoursDep = Depends(validate_hours_parameter)
+EmployeeNameDep = Depends(validate_employee_name_parameter)
+QueryDep = Depends(validate_query_parameter)
+OptionalAuthDep = Depends(get_optional_auth)
 RequiredAuthDep = Depends(require_auth)
 
 
+def create_dependency_factory(dependency_func):
+    """
+    Create a dependency factory for reusable dependencies.
+    
+    Args:
+        dependency_func: Function to create dependency from
+        
+    Returns:
+        Dependency factory function
+    """
+    def factory(*args, **kwargs):
+        return Depends(lambda: dependency_func(*args, **kwargs))
+    
+    return factory
 
+
+def create_validation_dependency(validator_func, error_message: str):
+    """
+    Create a validation dependency with custom error message.
+    
+    Args:
+        validator_func: Validation function
+        error_message: Custom error message
+        
+    Returns:
+        Validation dependency function
+    """
+    def validation_dependency(value):
+        try:
+            return validator_func(value)
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_message
+            )
+    
+    return Depends(validation_dependency)
+
+
+# Specialized validation dependencies
+validate_positive_int = create_validation_dependency(
+    validate_positive_integer,
+    "Value must be a positive integer"
+)
+
+validate_string_length = create_validation_dependency(
+    lambda x: validate_string_length(x, "field", 1, 100),
+    "String must be between 1 and 100 characters"
+)

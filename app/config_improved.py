@@ -7,8 +7,8 @@ with proper validation, type hints, and environment variable handling.
 
 import logging
 from typing import List, Optional, Union
-from pydantic import BaseSettings, Field, validator
-from pydantic_settings import BaseSettings as PydanticBaseSettings
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
 

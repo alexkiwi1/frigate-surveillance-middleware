@@ -79,7 +79,7 @@ class ExternalServiceError(BaseAPIError):
         super().__init__(
             message=f"External service '{service}' error: {message}",
             status_code=status.HTTP_502_BAD_GATEWAY,
-            details={"service": service, **details or {}}
+            details={"service": service, **(details or {})}
         )
 
 

@@ -19,11 +19,10 @@ from ..models import (
     CameraSummary,
     CameraActivityData
 )
-from ..utils.response_formatter import create_json_response, create_error_json_response
+from ..utils.formatting import format_success_response, format_error_response
 from ..services.queries import CameraQueries
 from ..utils.formatting import format_camera_summary, format_camera_activity_data, paginate_results
-from ..config import CacheKeys, settings
-from ..utils.errors import ValidationError, NotFoundError, DatabaseError, CacheError
+from ..config import CacheKeys, settings, CAMERAS
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +68,7 @@ async def get_camera_summary(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera summary: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=cached_data, message="Camera summaries retrieved from cache"),
+                content=format_success_response(cached_data, "Camera summaries retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -102,14 +101,14 @@ async def get_camera_summary(
         logger.debug(f"Cached camera summaries: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=camera_summaries, message="Camera summaries retrieved successfully"),
+            content=format_success_response(camera_summaries, "Camera summaries retrieved successfully"),
             status_code=status.HTTP_200_OK
         )
         
     except Exception as e:
         logger.error(f"Error retrieving camera summaries: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to retrieve camera summaries",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -159,7 +158,7 @@ async def get_single_camera_summary(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera summary: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=[cached_data], message="Camera summary retrieved from cache"),
+                content=format_success_response([cached_data], "Camera summary retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -184,7 +183,7 @@ async def get_single_camera_summary(
         logger.debug(f"Cached camera summary: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=[formatted_summary], message=f"Camera summary for {camera_name} retrieved successfully"),
+            content=format_success_response([formatted_summary], f"Camera summary for {camera_name} retrieved successfully"),
             status_code=status.HTTP_200_OK
         )
         
@@ -193,7 +192,7 @@ async def get_single_camera_summary(
     except Exception as e:
         logger.error(f"Error retrieving summary for camera {camera_name}: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 f"Failed to retrieve summary for camera {camera_name}",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -247,7 +246,7 @@ async def get_camera_activity(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera activity: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=cached_data, message="Camera activity retrieved from cache"),
+                content=format_success_response(cached_data, "Camera activity retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -299,7 +298,7 @@ async def get_camera_activity(
         logger.debug(f"Cached camera activity: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=response_data, message=f"Activity for camera {camera_name} retrieved successfully"),
+            content=format_success_response(response_data, f"Activity for camera {camera_name} retrieved successfully"),
             status_code=status.HTTP_200_OK
         )
         
@@ -308,7 +307,7 @@ async def get_camera_activity(
     except Exception as e:
         logger.error(f"Error retrieving activity for camera {camera_name}: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 f"Failed to retrieve activity for camera {camera_name}",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -354,7 +353,7 @@ async def get_camera_violations(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera violations: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=cached_data, message="Camera violations retrieved from cache"),
+                content=format_success_response(cached_data, "Camera violations retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -386,7 +385,7 @@ async def get_camera_violations(
         logger.debug(f"Cached camera violations: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=response_data, message=f"Violations for camera {camera_name} retrieved successfully"),
+            content=format_success_response(response_data, f"Violations for camera {camera_name} retrieved successfully"),
             status_code=status.HTTP_200_OK
         )
         
@@ -395,7 +394,7 @@ async def get_camera_violations(
     except Exception as e:
         logger.error(f"Error retrieving violations for camera {camera_name}: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 f"Failed to retrieve violations for camera {camera_name}",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -440,7 +439,7 @@ async def get_camera_status(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera status: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=cached_data, message="Camera status retrieved from cache"),
+                content=format_success_response(cached_data, "Camera status retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -513,7 +512,7 @@ async def get_camera_status(
         logger.debug(f"Cached camera status: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=status_info, message=f"Status for camera {camera_name} retrieved successfully"),
+            content=format_success_response(status_info, f"Status for camera {camera_name} retrieved successfully"),
             status_code=status.HTTP_200_OK
         )
         
@@ -522,7 +521,7 @@ async def get_camera_status(
     except Exception as e:
         logger.error(f"Error retrieving status for camera {camera_name}: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 f"Failed to retrieve status for camera {camera_name}",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -562,7 +561,7 @@ async def list_cameras(
         if cached_data is not None:
             logger.debug(f"Cache hit for camera list: {cache_key}")
             return JSONResponse(
-                content=create_json_response(data=cached_data, message="Camera list retrieved from cache"),
+                content=format_success_response(cached_data, "Camera list retrieved from cache"),
                 status_code=status.HTTP_200_OK
             )
         
@@ -612,14 +611,14 @@ async def list_cameras(
         logger.debug(f"Cached camera list: {cache_key}")
         
         return JSONResponse(
-            content=create_json_response(data=camera_list, message=f"Retrieved {len(camera_list)} cameras"),
+            content=format_success_response(camera_list, f"Retrieved {len(camera_list)} cameras"),
             status_code=status.HTTP_200_OK
         )
         
     except Exception as e:
         logger.error(f"Error retrieving camera list: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to retrieve camera list",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -667,8 +666,9 @@ async def clear_camera_cache(
         logger.info(f"Cleared {total_cleared} camera cache entries")
         
         return JSONResponse(
-            content=create_json_response(data=
-                {"cleared_keys": total_cleared}, message=f"Cleared {total_cleared} camera cache entries"
+            content=format_success_response(
+                {"cleared_keys": total_cleared},
+                f"Cleared {total_cleared} camera cache entries"
             ),
             status_code=status.HTTP_200_OK
         )
@@ -676,7 +676,7 @@ async def clear_camera_cache(
     except Exception as e:
         logger.error(f"Error clearing camera cache: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to clear camera cache",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}

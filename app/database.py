@@ -25,8 +25,11 @@ class DatabaseManager:
     async def initialize(self) -> None:
         """Initialize the database connection pool."""
         try:
+            # Construct database URL from config
+            database_url = f"postgresql://{settings.db_user}:{settings.db_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+            
             self.pool = await asyncpg.create_pool(
-                settings.database_url,
+                database_url,
                 min_size=5,
                 max_size=settings.db_pool_size,
                 max_queries=50000,

@@ -1,22 +1,40 @@
 """
-Response formatting utilities for the Frigate Dashboard Middleware.
+Response formatting utilities following FastAPI best practices.
 
-This module provides utilities for formatting API responses,
-constructing URLs, and handling data transformation.
+This module provides utilities for formatting API responses following the RORO pattern
+and consistent error handling patterns.
 """
 
+import logging
 from typing import Any, Dict, List, Optional, Union
-from .time import timestamp_to_iso, timestamp_to_readable, get_relative_time_string
+from datetime import datetime
+from fastapi.responses import JSONResponse
+from fastapi import status
+
+from .time import timestamp_to_readable, timestamp_to_iso, get_relative_time_string
+from .errors import ErrorResponse, create_error_response, BaseAPIError
 from ..config import settings
 
+logger = logging.getLogger(__name__)
 
-def format_success_response(data: Any, message: str = "Success") -> Dict[str, Any]:
+
+def get_current_timestamp() -> float:
+    """Get current timestamp as float."""
+    return datetime.now().timestamp()
+
+
+def format_success_response(
+    data: Any, 
+    message: str = "Success",
+    status_code: int = status.HTTP_200_OK
+) -> Dict[str, Any]:
     """
-    Format a successful API response.
+    Format a successful API response following RORO pattern.
     
     Args:
         data: Response data
         message: Success message
+        status_code: HTTP status code
         
     Returns:
         Formatted response dictionary
@@ -29,88 +47,75 @@ def format_success_response(data: Any, message: str = "Success") -> Dict[str, An
     }
 
 
-def format_error_response(error: str, status_code: int = 400, 
-                         details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def format_error_response(
+    message: str,
+    status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
+    details: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Format an error API response.
     
     Args:
-        error: Error message
+        message: Error message
         status_code: HTTP status code
         details: Additional error details
         
     Returns:
         Formatted error response dictionary
     """
-    response = {
+    return {
         "success": False,
-        "error": error,
-        "status_code": status_code,
+        "error": message,
+        "message": message,
+        "details": details or {},
         "timestamp": timestamp_to_iso(get_current_timestamp())
     }
-    
-    if details:
-        response["details"] = details
-        
-    return response
 
 
-def construct_video_url(recording_id: str) -> str:
+def create_json_response(
+    data: Any,
+    message: str = "Success",
+    status_code: int = status.HTTP_200_OK
+) -> JSONResponse:
     """
-    Construct video URL for a recording.
-    
-    Args:
-        recording_id: Recording ID
-        
-    Returns:
-        Full video URL
-    """
-    return f"{settings.video_api_base_url}/clip/{recording_id}"
-
-
-def construct_thumbnail_url(recording_id: str) -> str:
-    """
-    Construct thumbnail URL for a recording.
+    Create a JSONResponse with proper formatting.
     
     Args:
-        recording_id: Recording ID
+        data: Response data
+        message: Success message
+        status_code: HTTP status code
         
     Returns:
-        Full thumbnail URL
+        JSONResponse object
     """
-    return f"{settings.video_api_base_url}/thumb/{recording_id}"
+    response_data = format_success_response(data, message)
+    return JSONResponse(
+        content=response_data,
+        status_code=status_code
+    )
 
 
-def construct_snapshot_url(camera: str, timestamp: Union[float, int], 
-                          event_id: str) -> str:
+def create_error_json_response(
+    message: str,
+    status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
+    details: Optional[Dict[str, Any]] = None
+) -> JSONResponse:
     """
-    Construct snapshot URL for an event.
+    Create an error JSONResponse with proper formatting.
     
     Args:
-        camera: Camera name
-        timestamp: Event timestamp
-        event_id: Event ID
+        message: Error message
+        status_code: HTTP status code
+        details: Additional error details
         
     Returns:
-        Full snapshot URL
+        JSONResponse object
     """
-    return f"{settings.video_api_base_url}/snapshot/{camera}/{timestamp}-{event_id}"
-
-
-def construct_face_url(person_name: str, filename: str) -> str:
-    """
-    Construct face recognition image URL.
-    
-    Args:
-        person_name: Person's name
-        filename: Image filename
-        
-    Returns:
-        Full face image URL
-    """
-    import urllib.parse
-    encoded_name = urllib.parse.quote(person_name)
-    return f"{settings.video_api_base_url}/face/{encoded_name}/{filename}"
+    response_data = format_error_response(message, status_code, details)
+    return JSONResponse(
+        content=response_data,
+        status_code=status_code
+    )
 
 
 def format_violation_data(violation: Dict[str, Any]) -> Dict[str, Any]:
@@ -132,98 +137,16 @@ def format_violation_data(violation: Dict[str, Any]) -> Dict[str, Any]:
         "camera": violation.get("camera"),
         "employee_name": violation.get("employee_name", "Unknown"),
         "confidence": violation.get("confidence", 0.0),
-        "zones": violation.get("zones", []),
+        "zones": violation.get("zones"),
         "thumbnail_url": violation.get("thumbnail_url"),
         "video_url": violation.get("video_url"),
         "snapshot_url": violation.get("snapshot_url")
     }
 
 
-def format_employee_stats(employee_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Format employee statistics data.
-    
-    Args:
-        employee_data: Raw employee data from database
-        
-    Returns:
-        Formatted employee statistics
-    """
-    detections = employee_data.get("detections", 0)
-    
-    # Determine activity level
-    if detections >= settings.high_activity_threshold:
-        activity_level = "high"
-    elif detections >= settings.medium_activity_threshold:
-        activity_level = "medium"
-    else:
-        activity_level = "low"
-    
-    return {
-        "employee_name": employee_data.get("employee_name"),
-        "detections": detections,
-        "cameras_visited": employee_data.get("cameras_visited", 0),
-        "last_seen": employee_data.get("last_seen"),
-        "last_seen_iso": timestamp_to_iso(employee_data.get("last_seen")) if employee_data.get("last_seen") else None,
-        "last_seen_readable": timestamp_to_readable(employee_data.get("last_seen")) if employee_data.get("last_seen") else None,
-        "last_seen_relative": get_relative_time_string(employee_data.get("last_seen")) if employee_data.get("last_seen") else None,
-        "activity_level": activity_level,
-        "violations_count": employee_data.get("violations_count", 0)
-    }
-
-
-def format_camera_summary(camera_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Format camera summary data.
-    
-    Args:
-        camera_data: Raw camera data from database
-        
-    Returns:
-        Formatted camera summary
-    """
-    return {
-        "camera": camera_data.get("camera"),
-        "active_people": camera_data.get("active_people", 0),
-        "total_detections": camera_data.get("total_detections", 0),
-        "phone_violations": camera_data.get("phone_violations", 0),
-        "recording_status": camera_data.get("recording_status", "unknown"),
-        "last_activity": camera_data.get("last_activity"),
-        "last_activity_iso": timestamp_to_iso(camera_data.get("last_activity")) if camera_data.get("last_activity") else None,
-        "last_activity_relative": get_relative_time_string(camera_data.get("last_activity")) if camera_data.get("last_activity") else None
-    }
-
-
-def format_camera_activity_data(activity_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Format camera activity data.
-    
-    Args:
-        activity_data: Raw activity data from database
-        
-    Returns:
-        Formatted camera activity data
-    """
-    return {
-        "camera": activity_data.get("camera"),
-        "timestamp": activity_data.get("timestamp"),
-        "timestamp_iso": timestamp_to_iso(activity_data.get("timestamp")) if activity_data.get("timestamp") else None,
-        "timestamp_relative": get_relative_time_string(activity_data.get("timestamp")) if activity_data.get("timestamp") else None,
-        "event_type": activity_data.get("event_type"),
-        "label": activity_data.get("label"),
-        "zones": activity_data.get("zones", []),
-        "employee_name": activity_data.get("employee_name"),
-        "snapshot_url": construct_snapshot_url(
-            activity_data.get("camera", ""),
-            activity_data.get("timestamp", 0),
-            activity_data.get("event_id", "")
-        ) if activity_data.get("event_id") else None
-    }
-
-
 def format_hourly_trend_data(trend_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Format hourly trend data.
+    Format hourly trend data for API response.
     
     Args:
         trend_data: Raw trend data from database
@@ -257,96 +180,276 @@ def format_hourly_trend_data(trend_data: List[Dict[str, Any]]) -> List[Dict[str,
     return formatted
 
 
-def format_dashboard_overview(overview_data: Dict[str, Any]) -> Dict[str, Any]:
+def format_employee_data(employee: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Format dashboard overview data.
+    Format employee data for API response.
     
     Args:
-        overview_data: Raw overview data from database
+        employee: Raw employee data from database
         
     Returns:
-        Formatted dashboard overview
+        Formatted employee data
     """
     return {
-        "total_violations_today": overview_data.get("total_violations_today", 0),
-        "top_violators": overview_data.get("top_violators", []),
-        "active_cameras": overview_data.get("active_cameras", []),
-        "recent_events": overview_data.get("recent_events", []),
-        "last_updated": timestamp_to_iso(get_current_timestamp()),
-        "last_updated_relative": "just now"
+        "employee_name": employee.get("employee_name"),
+        "detections": employee.get("detections", 0),
+        "cameras_visited": employee.get("cameras_visited", 0),
+        "last_seen": employee.get("last_seen"),
+        "last_seen_iso": timestamp_to_iso(employee.get("last_seen")),
+        "last_seen_readable": timestamp_to_readable(employee.get("last_seen")),
+        "last_seen_relative": get_relative_time_string(employee.get("last_seen")),
+        "activity_level": employee.get("activity_level", "low"),
+        "violations_count": employee.get("violations_count", 0)
     }
 
 
-def sanitize_employee_name(name: Optional[str]) -> str:
+def format_camera_data(camera: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Sanitize employee name for safe display.
+    Format camera data for API response.
     
     Args:
-        name: Raw employee name
+        camera: Raw camera data from database
         
     Returns:
-        Sanitized employee name
+        Formatted camera data
     """
-    if not name or name.strip() == "":
-        return "Unknown"
-    
-    # Remove any potentially harmful characters
-    sanitized = name.strip()
-    if len(sanitized) > 50:  # Limit length
-        sanitized = sanitized[:50] + "..."
-    
-    return sanitized
+    return {
+        "camera_name": camera.get("camera_name"),
+        "violations_count": camera.get("violations_count", 0),
+        "last_activity": camera.get("last_activity"),
+        "last_activity_iso": timestamp_to_iso(camera.get("last_activity")),
+        "last_activity_readable": timestamp_to_readable(camera.get("last_activity")),
+        "last_activity_relative": get_relative_time_string(camera.get("last_activity")),
+        "status": camera.get("status", "unknown"),
+        "is_active": camera.get("is_active", False)
+    }
 
 
-def format_activity_level(detections: int) -> str:
+def format_camera_activity_data(activity_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Determine activity level based on detection count.
+    Format camera activity data for API response.
     
     Args:
-        detections: Number of detections
+        activity_data: Raw activity data from database
         
     Returns:
-        Activity level string
+        Formatted activity data
     """
-    if detections >= settings.high_activity_threshold:
-        return "high"
-    elif detections >= settings.medium_activity_threshold:
-        return "medium"
-    else:
-        return "low"
+    formatted = []
+    for activity in activity_data:
+        formatted.append({
+            "timestamp": activity.get("timestamp"),
+            "timestamp_iso": timestamp_to_iso(activity.get("timestamp")),
+            "timestamp_readable": timestamp_to_readable(activity.get("timestamp")),
+            "relative_time": get_relative_time_string(activity.get("timestamp")),
+            "camera": activity.get("camera"),
+            "event_type": activity.get("event_type"),
+            "employee_name": activity.get("employee_name", "Unknown"),
+            "confidence": activity.get("confidence", 0.0),
+            "zones": activity.get("zones"),
+            "thumbnail_url": activity.get("thumbnail_url"),
+            "video_url": activity.get("video_url"),
+            "snapshot_url": activity.get("snapshot_url")
+        })
+    return formatted
 
 
-def paginate_results(results: List[Any], page: int = 1, 
-                    per_page: int = 50) -> Dict[str, Any]:
+def construct_video_url(source_id: str) -> str:
     """
-    Paginate a list of results.
+    Construct video URL for a given source ID.
+    
+    Args:
+        source_id: Source ID for the video
+        
+    Returns:
+        Complete video URL
+    """
+    return f"{settings.video_api_base_url}/clip/{source_id}"
+
+
+def construct_thumbnail_url(source_id: str) -> str:
+    """
+    Construct thumbnail URL for a given source ID.
+    
+    Args:
+        source_id: Source ID for the thumbnail
+        
+    Returns:
+        Complete thumbnail URL
+    """
+    return f"{settings.video_api_base_url}/thumb/{source_id}"
+
+
+def construct_snapshot_url(camera: str, timestamp: float, source_id: str) -> str:
+    """
+    Construct snapshot URL for a given camera, timestamp, and source ID.
+    
+    Args:
+        camera: Camera name
+        timestamp: Event timestamp
+        source_id: Source ID for the snapshot
+        
+    Returns:
+        Complete snapshot URL
+    """
+    return f"{settings.video_api_base_url}/snapshot/{camera}/{timestamp}-{source_id}"
+
+
+def validate_and_format_response_data(
+    data: Any,
+    data_type: str,
+    message: str = "Success"
+) -> Dict[str, Any]:
+    """
+    Validate and format response data with proper error handling.
+    
+    Args:
+        data: Response data to validate and format
+        data_type: Type of data being formatted
+        message: Success message
+        
+    Returns:
+        Formatted response data
+        
+    Raises:
+        ValidationError: If data validation fails
+    """
+    if data is None:
+        raise ValueError(f"No {data_type} data available")
+    
+    if isinstance(data, list) and len(data) == 0:
+        logger.warning(f"Empty {data_type} list returned")
+    
+    return format_success_response(data, message)
+
+
+def format_employee_stats(employee: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Format employee statistics data for API response.
+    
+    Args:
+        employee: Raw employee data from database
+        
+    Returns:
+        Formatted employee statistics data
+    """
+    return {
+        "employee_name": employee.get("employee_name"),
+        "detections": employee.get("detections", 0),
+        "cameras_visited": employee.get("cameras_visited", 0),
+        "last_seen": employee.get("last_seen"),
+        "last_seen_iso": timestamp_to_iso(employee.get("last_seen")),
+        "last_seen_readable": timestamp_to_readable(employee.get("last_seen")),
+        "last_seen_relative": get_relative_time_string(employee.get("last_seen")),
+        "activity_level": employee.get("activity_level", "low"),
+        "violations_count": employee.get("violations_count", 0)
+    }
+
+
+def format_camera_summary(camera: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Format camera summary data for API response.
+    
+    Args:
+        camera: Raw camera data from database
+        
+    Returns:
+        Formatted camera summary data
+    """
+    return {
+        "camera_name": camera.get("camera_name"),
+        "violations_count": camera.get("violations_count", 0),
+        "last_activity": camera.get("last_activity"),
+        "last_activity_iso": timestamp_to_iso(camera.get("last_activity")),
+        "last_activity_readable": timestamp_to_readable(camera.get("last_activity")),
+        "last_activity_relative": get_relative_time_string(camera.get("last_activity")),
+        "status": camera.get("status", "unknown"),
+        "is_active": camera.get("is_active", False)
+    }
+
+
+def format_camera_activity_data(activity_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Format camera activity data for API response.
+    
+    Args:
+        activity_data: Raw activity data from database
+        
+    Returns:
+        Formatted activity data
+    """
+    formatted = []
+    for activity in activity_data:
+        formatted.append({
+            "timestamp": activity.get("timestamp"),
+            "timestamp_iso": timestamp_to_iso(activity.get("timestamp")),
+            "timestamp_readable": timestamp_to_readable(activity.get("timestamp")),
+            "relative_time": get_relative_time_string(activity.get("timestamp")),
+            "camera": activity.get("camera"),
+            "event_type": activity.get("event_type"),
+            "employee_name": activity.get("employee_name", "Unknown"),
+            "confidence": activity.get("confidence", 0.0),
+            "zones": activity.get("zones"),
+            "thumbnail_url": activity.get("thumbnail_url"),
+            "video_url": activity.get("video_url"),
+            "snapshot_url": activity.get("snapshot_url")
+        })
+    return formatted
+
+
+def paginate_results(results: List[Dict[str, Any]], page: int, limit: int) -> Dict[str, Any]:
+    """
+    Paginate results for API response.
     
     Args:
         results: List of results to paginate
-        page: Page number (1-based)
-        per_page: Items per page
+        page: Current page number (1-based)
+        limit: Number of items per page
         
     Returns:
         Paginated results with metadata
     """
     total = len(results)
-    start = (page - 1) * per_page
-    end = start + per_page
+    start_idx = (page - 1) * limit
+    end_idx = start_idx + limit
     
-    paginated_results = results[start:end]
+    paginated_results = results[start_idx:end_idx]
     
     return {
-        "items": paginated_results,
+        "data": paginated_results,
         "pagination": {
             "page": page,
-            "per_page": per_page,
+            "limit": limit,
             "total": total,
-            "pages": (total + per_page - 1) // per_page,
-            "has_next": end < total,
+            "pages": (total + limit - 1) // limit,
+            "has_next": end_idx < total,
             "has_prev": page > 1
         }
     }
 
 
-# Import get_current_timestamp at the end to avoid circular imports
-from .time import get_current_timestamp
+def handle_api_error(error: Exception, operation: str) -> JSONResponse:
+    """
+    Handle API errors with proper logging and response formatting.
+    
+    Args:
+        error: Exception that occurred
+        operation: Operation that failed
+        
+    Returns:
+        JSONResponse with error details
+    """
+    logger.error(f"Error during {operation}: {str(error)}", exc_info=True)
+    
+    if isinstance(error, BaseAPIError):
+        return create_error_json_response(
+            message=error.message,
+            status_code=error.status_code,
+            details=error.details
+        )
+    
+    return create_error_json_response(
+        message=f"Internal server error during {operation}",
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        details={"operation": operation, "error_type": type(error).__name__}
+    )

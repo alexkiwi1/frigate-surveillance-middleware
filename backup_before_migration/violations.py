@@ -34,7 +34,6 @@ from ..utils.errors import (
 )
 from ..services.queries import ViolationQueries
 from ..config import CacheKeys, settings
-from ..utils.errors import ValidationError, NotFoundError, DatabaseError, CacheError
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +81,9 @@ async def get_live_violations(
         cached_data = await cache.get(cache_key)
         if cached_data is not None:
             logger.debug(f"Cache hit for live violations: {cache_key}")
-            return create_json_response(
-                data=cached_data,
-                message="Live violations retrieved from cache"
+            return JSONResponse(
+                content=format_success_response(cached_data, "Live violations retrieved from cache"),
+                status_code=status.HTTP_200_OK
             )
         
         # Query database
@@ -103,12 +102,15 @@ async def get_live_violations(
         await cache.set(cache_key, formatted_violations, settings.cache_ttl_live_violations)
         logger.debug(f"Cached live violations: {cache_key}")
         
-        return create_json_response(data=formatted_violations, message="Live violations retrieved successfully")
+        return JSONResponse(
+            content=format_success_response(formatted_violations, "Live violations retrieved successfully"),
+            status_code=status.HTTP_200_OK
+        )
         
     except Exception as e:
         logger.error(f"Error retrieving live violations: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to retrieve live violations",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -155,7 +157,10 @@ async def get_hourly_trend(
         cached_data = await cache.get(cache_key)
         if cached_data is not None:
             logger.debug(f"Cache hit for hourly trend: {cache_key}")
-            return create_json_response(data=cached_data, message="Hourly trend retrieved from cache")
+            return JSONResponse(
+                content=format_success_response(cached_data, "Hourly trend retrieved from cache"),
+                status_code=status.HTTP_200_OK
+            )
         
         # Query database
         logger.info(f"Fetching hourly trend: hours={hours}")
@@ -171,12 +176,15 @@ async def get_hourly_trend(
         await cache.set(cache_key, formatted_trend, settings.cache_ttl_hourly_trend)
         logger.debug(f"Cached hourly trend: {cache_key}")
         
-        return create_json_response(data=formatted_trend, message="Hourly trend retrieved successfully")
+        return JSONResponse(
+            content=format_success_response(formatted_trend, "Hourly trend retrieved successfully"),
+            status_code=status.HTTP_200_OK
+        )
         
     except Exception as e:
         logger.error(f"Error retrieving hourly trend: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to retrieve hourly trend",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -220,7 +228,10 @@ async def get_violation_stats(
         cached_data = await cache.get(cache_key)
         if cached_data is not None:
             logger.debug(f"Cache hit for violation stats: {cache_key}")
-            return create_json_response(data=cached_data, message="Violation stats retrieved from cache")
+            return JSONResponse(
+                content=format_success_response(cached_data, "Violation stats retrieved from cache"),
+                status_code=status.HTTP_200_OK
+            )
         
         # Query database for statistics
         logger.info(f"Fetching violation stats: hours={hours}")
@@ -322,12 +333,15 @@ async def get_violation_stats(
         await cache.set(cache_key, stats, settings.cache_ttl_hourly_trend)
         logger.debug(f"Cached violation stats: {cache_key}")
         
-        return create_json_response(data=stats, message="Violation statistics retrieved successfully")
+        return JSONResponse(
+            content=format_success_response(stats, "Violation statistics retrieved successfully"),
+            status_code=status.HTTP_200_OK
+        )
         
     except Exception as e:
         logger.error(f"Error retrieving violation stats: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to retrieve violation statistics",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}
@@ -371,14 +385,18 @@ async def clear_violation_cache(
         
         logger.info(f"Cleared {total_cleared} violation cache entries")
         
-        return create_json_response(data=
-                {"cleared_keys": total_cleared}, message=f"Cleared {total_cleared} violation cache entries"
-            )
+        return JSONResponse(
+            content=format_success_response(
+                {"cleared_keys": total_cleared},
+                f"Cleared {total_cleared} violation cache entries"
+            ),
+            status_code=status.HTTP_200_OK
+        )
         
     except Exception as e:
         logger.error(f"Error clearing violation cache: {e}")
         return JSONResponse(
-            content=create_error_json_response(
+            content=format_error_response(
                 "Failed to clear violation cache",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 {"error": str(e)}

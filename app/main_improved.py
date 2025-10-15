@@ -18,7 +18,7 @@ import time
 import json
 import yaml
 
-from .config import settings
+from .config_improved import settings
 from .database import db_manager
 from .cache import cache_manager
 from .routers import violations, employees, cameras, websocket
@@ -355,9 +355,12 @@ async def health_check() -> JSONResponse:
             }
         }
         
-        return create_json_response(
-            data=health_data,
-            message="Health check completed"
+        return JSONResponse(
+            content=create_json_response(
+                data=health_data,
+                message="Health check completed"
+            ).get("data"),
+            status_code=status_code
         )
         
     except Exception as e:
