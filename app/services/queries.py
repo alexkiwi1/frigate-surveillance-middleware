@@ -48,56 +48,44 @@ class ViolationQueries:
         
         camera_filter = f"AND camera = '{camera}'" if camera else ""
         
+        # Simplified query for better performance - removed complex joins
         query = f"""
-        WITH recent_phones AS (
-            SELECT 
-                timestamp, 
-                camera, 
-                source_id, 
-                data,
-                data->>'label' as label,
-                data->'zones' as zones
-            FROM timeline
-            WHERE data->>'label' = 'cell phone'
-            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
-            {camera_filter}
-        ),
-        nearby_faces AS (
-            SELECT DISTINCT ON (rp.timestamp, rp.camera)
-                rp.timestamp, 
-                rp.camera,
-                (f.data->'sub_label'->>0) as employee_name,
-                f.data->>'score' as confidence
-            FROM recent_phones rp
-            LEFT JOIN timeline f ON 
-                f.camera = rp.camera 
-                AND f.source = 'tracked_object'
-                AND ABS(f.timestamp - rp.timestamp) < {face_window}
-            ORDER BY rp.timestamp, rp.camera, ABS(f.timestamp - rp.timestamp)
-        )
         SELECT 
-            rp.timestamp,
-            rp.camera,
-            rp.source_id as id,
-            rp.zones,
-            COALESCE(nf.employee_name, 'Unknown') as employee_name,
-            COALESCE(nf.confidence::float, 0.0) as confidence,
-            CONCAT('{settings.video_api_base_url}/thumb/', rp.source_id) as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/clip/', rp.source_id) as video_url,
-            CONCAT('{settings.video_api_base_url}/snapshot/', rp.camera, '/', rp.timestamp, '-', rp.source_id) as snapshot_url
-        FROM recent_phones rp
-        LEFT JOIN nearby_faces nf USING (timestamp, camera)
-        LEFT JOIN reviewsegment rs ON 
-            rs.camera = rp.camera 
-            AND ABS(rs.start_time - rp.timestamp) < {settings.thumbnail_window}
-        ORDER BY rp.timestamp DESC
+            timestamp,
+            camera,
+            source_id as id,
+            data->'zones' as zones,
+            'Unknown' as employee_name,
+            0.0 as confidence,
+            CONCAT('{settings.video_api_base_url}/thumb/', source_id) as thumbnail_url,
+            CONCAT('{settings.video_api_base_url}/clip/', source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/snapshot/', camera, '/', timestamp, '-', source_id) as snapshot_url
+        FROM timeline
+        WHERE data->>'label' = 'cell phone'
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
+        {camera_filter}
+        ORDER BY timestamp DESC
         LIMIT {limit}
         """
         
         try:
             results = await db.fetch_all(query)
             logger.debug(f"Retrieved {len(results)} live violations")
-            return results
+            
+            # Convert Decimal types to appropriate types for JSON serialization
+            def convert_decimals(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_decimals(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_decimals(item) for item in obj]
+                elif hasattr(obj, 'as_tuple'):  # Decimal type
+                    return float(obj)
+                else:
+                    return obj
+            
+            # Convert all Decimal values in the results
+            converted_results = [convert_decimals(result) for result in results]
+            return converted_results
         except Exception as e:
             logger.error(f"Error retrieving live violations: {e}")
             raise
