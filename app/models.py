@@ -293,3 +293,5 @@ class APIInfoResponse(BaseResponse):
     """Response model for API info endpoint."""
     data: APIInfo = Field(..., description="API information")
 
+
+

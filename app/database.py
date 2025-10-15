@@ -374,3 +374,5 @@ async def get_database() -> DatabaseManager:
     """FastAPI dependency to get database manager."""
     return db_manager
 
+
+
