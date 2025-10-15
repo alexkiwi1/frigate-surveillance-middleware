@@ -128,6 +128,15 @@ async def validate_hours(hours: int = 24) -> int:
     Raises:
         HTTPException: If hours is invalid
     """
+    # Convert Decimal to int if needed (PostgreSQL returns Decimal types)
+    try:
+        hours = int(hours)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hours must be a valid integer"
+        )
+    
     if hours < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

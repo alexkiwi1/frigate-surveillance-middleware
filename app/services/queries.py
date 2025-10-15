@@ -41,6 +41,11 @@ class ViolationQueries:
         Returns:
             List of violation records with employee names and media URLs
         """
+        # Ensure hours is an integer (convert from Decimal if needed)
+        hours = int(hours)
+        hours_seconds = int(hours * 3600)
+        face_window = int(settings.face_detection_window)
+        
         camera_filter = f"AND camera = '{camera}'" if camera else ""
         
         query = f"""
@@ -54,7 +59,7 @@ class ViolationQueries:
                 data->'zones' as zones
             FROM timeline
             WHERE data->>'label' = 'cell phone'
-            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
             {camera_filter}
         ),
         nearby_faces AS (
@@ -67,7 +72,7 @@ class ViolationQueries:
             LEFT JOIN timeline f ON 
                 f.camera = rp.camera 
                 AND f.source = 'face'
-                AND ABS(f.timestamp - rp.timestamp) < {settings.face_detection_window}
+                AND ABS(f.timestamp - rp.timestamp) < {face_window}
             ORDER BY rp.timestamp, rp.camera, ABS(f.timestamp - rp.timestamp)
         )
         SELECT 
@@ -112,12 +117,19 @@ class ViolationQueries:
         Returns:
             List of hourly trend data
         """
+        # Ensure hours is an integer (convert from Decimal if needed)
+        hours = int(hours)
+        
+        # Calculate time values as integers
+        hours_seconds = int(hours * 3600)
+        face_window = int(settings.face_detection_window)
+        
         query = f"""
         WITH hourly_buckets AS (
             SELECT 
                 generate_series(
-                    EXTRACT(EPOCH FROM NOW()) - {hours * 3600},
-                    EXTRACT(EPOCH FROM NOW()),
+                    EXTRACT(EPOCH FROM NOW()) - {hours_seconds}::integer,
+                    EXTRACT(EPOCH FROM NOW())::integer,
                     3600
                 ) as hour_start
         ),
@@ -136,13 +148,13 @@ class ViolationQueries:
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
                     AND f.source = 'face'
-                    AND ABS(f.timestamp - p.timestamp) < {settings.face_detection_window}
+                    AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
-                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
                 ORDER BY p.timestamp, p.camera, ABS(f.timestamp - p.timestamp)
             ) nf USING (timestamp, camera)
             WHERE p.data->>'label' = 'cell phone'
-            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
         )
         SELECT 
             hb.hour_start as hour,
@@ -156,11 +168,13 @@ class ViolationQueries:
         """
         
         try:
+            logger.debug(f"Executing hourly trend query with hours={hours}, hours_seconds={hours_seconds}, face_window={face_window}")
             results = await db.fetch_all(query)
             logger.debug(f"Retrieved hourly trend for {len(results)} hours")
             return results
         except Exception as e:
             logger.error(f"Error retrieving hourly trend: {e}")
+            logger.error(f"Query parameters: hours={hours}, hours_seconds={hours_seconds}, face_window={face_window}")
             raise
 
 
@@ -182,6 +196,11 @@ class EmployeeQueries:
         Returns:
             List of employee statistics
         """
+        # Ensure hours is an integer (convert from Decimal if needed)
+        hours = int(hours)
+        hours_seconds = int(hours * 3600)
+        face_window = int(settings.face_detection_window)
+        
         query = f"""
         WITH employee_detections AS (
             SELECT 
@@ -191,7 +210,7 @@ class EmployeeQueries:
                 MAX(timestamp) as last_seen
             FROM timeline
             WHERE source = 'face'
-            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
             AND data->>'sub_label' IS NOT NULL
             GROUP BY data->>'sub_label'
         ),
@@ -209,13 +228,13 @@ class EmployeeQueries:
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
                     AND f.source = 'face'
-                    AND ABS(f.timestamp - p.timestamp) < {settings.face_detection_window}
+                    AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
-                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
                 ORDER BY p.timestamp, p.camera, ABS(f.timestamp - p.timestamp)
             ) nf USING (timestamp, camera)
             WHERE p.data->>'label' = 'cell phone'
-            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
             GROUP BY nf.employee_name
         )
         SELECT 
@@ -279,7 +298,7 @@ class EmployeeQueries:
             LEFT JOIN timeline f ON 
                 f.camera = p.camera 
                 AND f.source = 'face'
-                AND ABS(f.timestamp - p.timestamp) < {settings.face_detection_window}
+                AND ABS(f.timestamp - p.timestamp) < {face_window}
             WHERE p.data->>'label' = 'cell phone'
             AND f.data->>'sub_label' = '{employee_name}'
             {time_filter}
@@ -392,6 +411,11 @@ class CameraQueries:
         Returns:
             List of camera activities
         """
+        # Ensure hours is an integer (convert from Decimal if needed)
+        hours = int(hours)
+        hours_seconds = int(hours * 3600)
+        face_window = int(settings.face_detection_window)
+        
         query = f"""
         WITH camera_events AS (
             SELECT 
@@ -402,7 +426,7 @@ class CameraQueries:
                 data->>'score' as confidence
             FROM timeline
             WHERE camera = '{camera}'
-            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
+            AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
             AND data->>'label' IN ('person', 'cell phone', 'face')
         )
         SELECT 
@@ -468,7 +492,7 @@ class DashboardQueries:
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
                     AND f.source = 'face'
-                    AND ABS(f.timestamp - p.timestamp) < {settings.face_detection_window}
+                    AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
                 AND p.timestamp > (SELECT day_start FROM today_start)
                 ORDER BY p.timestamp, p.camera, ABS(f.timestamp - p.timestamp)

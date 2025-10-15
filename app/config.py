@@ -87,6 +87,25 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=100, env="RATE_LIMIT_REQUESTS")
     rate_limit_window: int = Field(default=60, env="RATE_LIMIT_WINDOW")  # seconds
     
+    # Camera Configuration
+    cameras: List[str] = Field(
+        default=[
+            "admin_office",
+            "employees_01", 
+            "employees_02",
+            "employees_03",
+            "employees_04",
+            "employees_05",
+            "employees_06",
+            "employees_07",
+            "employees_08",
+            "meeting_room",
+            "reception",
+            "camera_237"
+        ],
+        env="CAMERAS"
+    )
+    
     class Config:
         env_file = ".env"
         case_sensitive = False
@@ -101,6 +120,11 @@ class Settings(BaseSettings):
         """Construct Redis URL."""
         auth = f":{self.redis_password}@" if self.redis_password else ""
         return f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+    
+    @property
+    def CAMERAS(self) -> List[str]:
+        """Get cameras list for backward compatibility."""
+        return self.cameras
 
 
 # Global settings instance

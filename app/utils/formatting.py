@@ -231,14 +231,28 @@ def format_hourly_trend_data(trend_data: List[Dict[str, Any]]) -> List[Dict[str,
     Returns:
         Formatted trend data
     """
+    # Convert Decimal types to appropriate types for JSON serialization
+    def convert_decimals(obj):
+        if isinstance(obj, dict):
+            return {k: convert_decimals(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_decimals(item) for item in obj]
+        elif hasattr(obj, 'as_tuple'):  # Decimal type
+            return float(obj)
+        else:
+            return obj
+    
     formatted = []
     for hour_data in trend_data:
+        # Convert all Decimal values in the hour_data
+        converted_hour_data = convert_decimals(hour_data)
+        
         formatted.append({
-            "hour": hour_data.get("hour"),
-            "hour_readable": timestamp_to_readable(hour_data.get("hour"), format_str="%H:00"),
-            "violations": hour_data.get("violations", 0),
-            "cameras": hour_data.get("cameras", []),
-            "employees": hour_data.get("employees", [])
+            "hour": converted_hour_data.get("hour"),
+            "hour_readable": timestamp_to_readable(converted_hour_data.get("hour"), format_str="%H:00"),
+            "violations": converted_hour_data.get("violations", 0),
+            "cameras": converted_hour_data.get("cameras", []),
+            "employees": converted_hour_data.get("employees", [])
         })
     return formatted
 

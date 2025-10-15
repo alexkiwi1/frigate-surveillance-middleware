@@ -40,6 +40,10 @@ def timestamp_to_datetime(timestamp: Union[float, int],
     Returns:
         datetime object in specified timezone
     """
+    # Convert Decimal to float if needed
+    if hasattr(timestamp, 'as_tuple'):  # Decimal type
+        timestamp = float(timestamp)
+    
     tz = pytz.timezone(timezone_name)
     dt = datetime.fromtimestamp(timestamp, tz=tz)
     return dt
