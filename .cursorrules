@@ -1,0 +1,255 @@
+# FastAPI Best Practices - Frigate Dashboard Middleware
+
+## Core Principles
+
+### 1. Concise and Technical Responses
+- Write clear, precise code with accurate Python examples
+- Avoid unnecessary verbosity in code and comments
+- Focus on functionality over explanation
+
+### 2. Functional Programming
+- Favor functional and declarative programming styles
+- Minimize the use of classes when possible
+- Use pure functions where applicable
+- Prefer composition over inheritance
+
+### 3. Avoid Code Duplication
+- Emphasize iteration and modularization
+- Create reusable utility functions
+- Extract common patterns into shared modules
+- Use dependency injection for shared resources
+
+### 4. Descriptive Naming
+- Use variable names that clearly describe their purpose
+- Incorporate auxiliary verbs (e.g., `is_active`, `has_permission`, `can_access`)
+- Use descriptive function names that explain what they do
+- Avoid abbreviations and unclear acronyms
+
+### 5. Consistent Naming Conventions
+- Use lowercase with underscores for directories and files (e.g., `routers/user_routes.py`)
+- Use PascalCase for classes and Pydantic models
+- Use snake_case for functions, variables, and module names
+- Use UPPER_CASE for constants
+
+### 6. Named Exports
+- Prefer named exports for routes and utility functions
+- Use explicit imports and exports
+- Avoid wildcard imports (`from module import *`)
+
+### 7. RORO Pattern
+- Implement "Receive an Object, Return an Object" pattern
+- Use Pydantic models for function inputs and outputs
+- Avoid passing multiple individual parameters
+
+## Python/FastAPI Specific Guidelines
+
+### 8. Function Definitions
+- Use `def` for pure functions
+- Use `async def` for asynchronous operations
+- Always use type hints in function signatures
+- Prefer async functions for I/O operations
+
+### 9. Type Hints
+- Apply type hints to all function signatures
+- Use Pydantic models over raw dictionaries for input validation
+- Use `typing` module for complex types
+- Use `Optional` and `Union` appropriately
+
+### 10. File Structure
+- Organize project with exported routers, sub-routes, utilities, static content, and types
+- Keep related functionality together
+- Separate concerns into different modules
+- Use clear module boundaries
+
+### 11. Conditional Statements
+- Avoid unnecessary complexity in conditionals
+- Use early returns to prevent deeply nested conditions
+- Use guard clauses for preconditions
+- Prefer positive conditions over negative ones
+
+### 12. Error Handling
+- Handle errors and edge cases at the beginning of functions
+- Use early returns to prevent deeply nested `if` statements
+- Implement guard clauses for preconditions and invalid states
+- Use proper error logging with user-friendly messages
+- Use custom error types or error factories for consistent error handling
+
+### 13. Error Logging
+- Ensure proper error logging with appropriate log levels
+- Provide user-friendly error messages
+- Log errors with sufficient context for debugging
+- Use structured logging when possible
+
+## FastAPI-Specific Guidelines
+
+### 14. Functional Components
+- Use plain functions and Pydantic models for input validation and response schemas
+- Avoid unnecessary class-based approaches
+- Use dependency injection for shared resources
+
+### 15. Declarative Routes
+- Define routes declaratively with clear return type annotations
+- Use descriptive route names and descriptions
+- Group related routes logically
+- Use appropriate HTTP methods
+
+### 16. Asynchronous Operations
+- Use `async def` for asynchronous operations
+- Use `await` for all async operations
+- Avoid blocking I/O in async functions
+- Use proper async context managers
+
+### 17. Lifecycle Events
+- Minimize use of `@app.on_event("startup")` and `@app.on_event("shutdown")`
+- Prefer lifespan context managers for managing startup and shutdown events
+- Use proper resource cleanup in lifespan events
+
+### 18. Middleware
+- Implement middleware for logging, error monitoring, and performance optimization
+- Use middleware sparingly and only when necessary
+- Ensure middleware doesn't block the request/response cycle
+- Use proper async middleware patterns
+
+### 19. Performance Optimization
+- Use asynchronous functions for I/O-bound tasks
+- Implement caching strategies for frequently accessed data
+- Use lazy loading for large datasets
+- Optimize database queries and minimize N+1 problems
+
+### 20. Error Handling
+- Use `HTTPException` for expected errors
+- Model errors as specific HTTP responses
+- Handle unexpected errors using middleware
+- Provide consistent error response format
+
+### 21. Pydantic Models
+- Use Pydantic's `BaseModel` for consistent input/output validation
+- Use response schemas for API responses
+- Use proper field validation and constraints
+- Use model inheritance for shared fields
+
+## Performance Optimization
+
+### 22. Non-Blocking I/O
+- Minimize blocking I/O operations
+- Use asynchronous operations for all database calls and external API requests
+- Use connection pooling for database connections
+- Use proper async context managers
+
+### 23. Caching
+- Implement caching for static and frequently accessed data
+- Use Redis or in-memory stores for caching
+- Implement proper cache invalidation strategies
+- Use appropriate cache TTL values
+
+### 24. Data Serialization
+- Optimize data serialization and deserialization with Pydantic
+- Use appropriate serialization methods
+- Minimize data transfer size
+- Use efficient data structures
+
+### 25. Lazy Loading
+- Use lazy loading techniques for large datasets
+- Implement pagination for large API responses
+- Use streaming for large file operations
+- Avoid loading unnecessary data
+
+## Key Conventions
+
+### 26. Dependency Injection
+- Rely on FastAPI's dependency injection system
+- Use dependencies for managing state and shared resources
+- Create reusable dependency functions
+- Use proper dependency scoping
+
+### 27. Performance Metrics
+- Prioritize API performance metrics (response time, latency, throughput)
+- Implement proper monitoring and alerting
+- Use performance profiling tools
+- Monitor resource usage
+
+### 28. Limit Blocking Operations
+- Favor asynchronous and non-blocking flows in routes
+- Use dedicated async functions for database and external API operations
+- Structure routes and dependencies clearly
+- Optimize for readability and maintainability
+
+## Project-Specific Rules
+
+### 29. Database Operations
+- Use asyncpg for PostgreSQL operations
+- Implement proper connection pooling
+- Use parameterized queries to prevent SQL injection
+- Handle database errors gracefully
+
+### 30. Redis Operations
+- Use async Redis client for caching operations
+- Implement proper error handling for cache operations
+- Use appropriate cache keys and TTL values
+- Handle Redis connection failures
+
+### 31. API Documentation
+- Use comprehensive docstrings for all endpoints
+- Provide clear parameter descriptions
+- Include example requests and responses
+- Use proper OpenAPI tags and descriptions
+
+### 32. Security
+- Implement proper input validation
+- Use secure defaults for all configurations
+- Implement proper authentication and authorization
+- Use HTTPS in production
+
+### 33. Testing
+- Write comprehensive tests for all endpoints
+- Use proper test fixtures and mocks
+- Test error conditions and edge cases
+- Maintain high test coverage
+
+### 34. Logging
+- Use structured logging throughout the application
+- Log important business events
+- Use appropriate log levels
+- Include correlation IDs for request tracing
+
+### 35. Configuration
+- Use environment variables for configuration
+- Use Pydantic Settings for configuration management
+- Provide sensible defaults
+- Validate configuration on startup
+
+## Code Quality
+
+### 36. Code Review
+- Ensure all code follows these guidelines
+- Use automated linting and formatting tools
+- Maintain consistent code style
+- Review for security vulnerabilities
+
+### 37. Documentation
+- Keep documentation up to date
+- Use clear and concise documentation
+- Include code examples where appropriate
+- Document API changes and breaking changes
+
+### 38. Version Control
+- Use meaningful commit messages
+- Keep commits focused and atomic
+- Use proper branching strategies
+- Tag releases appropriately
+
+## Monitoring and Observability
+
+### 39. Health Checks
+- Implement comprehensive health checks
+- Monitor database and cache connectivity
+- Track background task status
+- Provide detailed system status
+
+### 40. Metrics
+- Track API performance metrics
+- Monitor error rates and response times
+- Track resource usage
+- Implement proper alerting
+
+Remember: These rules are guidelines to help create maintainable, performant, and scalable FastAPI applications. Always consider the specific context and requirements of your project when applying these practices.
