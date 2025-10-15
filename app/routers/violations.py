@@ -228,9 +228,9 @@ async def get_violation_stats(
         # Get total violations
         total_query = """
         SELECT COUNT(*) as total_violations
-        FROM frigate_timeline
+        FROM timeline
         WHERE data->>'label' = 'cell phone'
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $1)
         """
         total_result = await db.fetch_one(total_query, hours * 3600)
         total_violations = total_result['total_violations'] if total_result else 0
@@ -240,9 +240,9 @@ async def get_violation_stats(
         SELECT 
             camera,
             COUNT(*) as violations
-        FROM frigate_timeline
+        FROM timeline
         WHERE data->>'label' = 'cell phone'
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $1)
         GROUP BY camera
         ORDER BY violations DESC
         """
@@ -254,23 +254,23 @@ async def get_violation_stats(
             SELECT 
                 COALESCE(nf.employee_name, 'Unknown') as employee_name,
                 COUNT(*) as violations
-            FROM frigate_timeline p
+            FROM timeline p
             LEFT JOIN (
                 SELECT DISTINCT ON (p.timestamp, p.camera)
                     p.timestamp, 
                     p.camera,
                     f.data->>'sub_label' as employee_name
-                FROM frigate_timeline p
-                LEFT JOIN frigate_timeline f ON 
+                FROM timeline p
+                LEFT JOIN timeline f ON 
                     f.camera = p.camera 
                     AND f.source = 'face'
                     AND ABS(f.timestamp - p.timestamp) < 3
                 WHERE p.data->>'label' = 'cell phone'
-                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+                AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - $1)
                 ORDER BY p.timestamp, p.camera, ABS(f.timestamp - p.timestamp)
             ) nf USING (timestamp, camera)
             WHERE p.data->>'label' = 'cell phone'
-            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
             GROUP BY nf.employee_name
         )
         SELECT * FROM employee_violations
@@ -284,26 +284,37 @@ async def get_violation_stats(
         SELECT 
             EXTRACT(HOUR FROM to_timestamp(timestamp)) as hour,
             COUNT(*) as violations
-        FROM frigate_timeline
+        FROM timeline
         WHERE data->>'label' = 'cell phone'
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $1)
         GROUP BY EXTRACT(HOUR FROM to_timestamp(timestamp))
         ORDER BY violations DESC
         LIMIT 5
         """
         peak_hours = await db.fetch_all(peak_hours_query, hours * 3600)
         
+        # Convert Decimal types to float for JSON serialization
+        def convert_decimals(obj):
+            if isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(item) for item in obj]
+            elif hasattr(obj, 'as_tuple'):  # Decimal type
+                return float(obj)
+            else:
+                return obj
+        
         # Compile statistics
         stats = {
-            "total_violations": total_violations,
+            "total_violations": int(total_violations),
             "time_period_hours": hours,
-            "violations_by_camera": camera_stats,
-            "violations_by_employee": employee_stats,
-            "peak_hours": peak_hours,
+            "violations_by_camera": convert_decimals(camera_stats),
+            "violations_by_employee": convert_decimals(employee_stats),
+            "peak_hours": convert_decimals(peak_hours),
             "summary": {
                 "most_active_camera": camera_stats[0]['camera'] if camera_stats else None,
                 "most_violating_employee": employee_stats[0]['employee_name'] if employee_stats else None,
-                "peak_hour": peak_hours[0]['hour'] if peak_hours else None
+                "peak_hour": int(peak_hours[0]['hour']) if peak_hours else None
             }
         }
         

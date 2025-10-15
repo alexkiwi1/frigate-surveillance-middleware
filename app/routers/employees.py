@@ -174,26 +174,26 @@ async def get_employee_violations(
             # Get total count for pagination
             count_query = """
             SELECT COUNT(*) as total
-            FROM frigate_timeline p
-            LEFT JOIN frigate_timeline f ON 
+            FROM timeline p
+            LEFT JOIN timeline f ON 
                 f.camera = p.camera 
                 AND f.source = 'face'
                 AND ABS(f.timestamp - p.timestamp) < 3
             WHERE p.data->>'label' = 'cell phone'
-            AND f.data->>'sub_label' = %s
+            AND f.data->>'sub_label' = $1
             """
-            time_params = []
+            time_params = [employee_name]
             if start_time and end_time:
-                count_query += " AND p.timestamp BETWEEN %s AND %s"
-                time_params = [start_time, end_time]
+                count_query += " AND p.timestamp BETWEEN $2 AND $3"
+                time_params.extend([start_time, end_time])
             elif start_time:
-                count_query += " AND p.timestamp >= %s"
-                time_params = [start_time]
+                count_query += " AND p.timestamp >= $2"
+                time_params.append(start_time)
             elif end_time:
-                count_query += " AND p.timestamp <= %s"
-                time_params = [end_time]
+                count_query += " AND p.timestamp <= $2"
+                time_params.append(end_time)
             
-            count_result = await db.fetch_one(count_query, employee_name, *time_params)
+            count_result = await db.fetch_one(count_query, *time_params)
             total_count = count_result['total'] if count_result else 0
             
             pagination_info = {
@@ -292,10 +292,10 @@ async def get_employee_activity(
             data->>'label' as event_type,
             data->'zones' as zones,
             data->>'score' as confidence
-        FROM frigate_timeline
+        FROM timeline
         WHERE source = 'face'
-        AND data->>'sub_label' = %s
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND data->>'sub_label' = $1
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         ORDER BY timestamp DESC
         LIMIT 100
         """
@@ -309,10 +309,10 @@ async def get_employee_activity(
             MIN(timestamp) as first_seen,
             MAX(timestamp) as last_seen,
             MAX(timestamp) - MIN(timestamp) as duration
-        FROM frigate_timeline
+        FROM timeline
         WHERE source = 'face'
-        AND data->>'sub_label' = %s
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND data->>'sub_label' = $1
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         GROUP BY camera
         ORDER BY visits DESC
         """
@@ -322,16 +322,16 @@ async def get_employee_activity(
         violation_summary_query = """
         SELECT 
             COUNT(*) as total_violations,
-            COUNT(DISTINCT camera) as violation_cameras,
-            MAX(timestamp) as last_violation
-        FROM frigate_timeline p
-        LEFT JOIN frigate_timeline f ON 
+            COUNT(DISTINCT p.camera) as violation_cameras,
+            MAX(p.timestamp) as last_violation
+        FROM timeline p
+        LEFT JOIN timeline f ON 
             f.camera = p.camera 
             AND f.source = 'face'
             AND ABS(f.timestamp - p.timestamp) < 3
         WHERE p.data->>'label' = 'cell phone'
-        AND f.data->>'sub_label' = %s
-        AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND f.data->>'sub_label' = $1
+        AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         """
         violation_summary = await db.fetch_one(violation_summary_query, employee_name, hours * 3600)
         
@@ -340,10 +340,10 @@ async def get_employee_activity(
         SELECT 
             EXTRACT(HOUR FROM to_timestamp(timestamp)) as hour,
             COUNT(*) as detections
-        FROM frigate_timeline
+        FROM timeline
         WHERE source = 'face'
-        AND data->>'sub_label' = %s
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - %s)
+        AND data->>'sub_label' = $1
+        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         GROUP BY EXTRACT(HOUR FROM to_timestamp(timestamp))
         ORDER BY hour
         """
@@ -435,13 +435,13 @@ async def search_employees(
             data->>'sub_label' as employee_name,
             COUNT(*) as detection_count,
             MAX(timestamp) as last_seen
-        FROM frigate_timeline
+        FROM timeline
         WHERE source = 'face'
         AND data->>'sub_label' IS NOT NULL
-        AND LOWER(data->>'sub_label') LIKE LOWER(%s)
+        AND LOWER(data->>'sub_label') LIKE LOWER($1)
         GROUP BY data->>'sub_label'
         ORDER BY detection_count DESC, last_seen DESC
-        LIMIT %s
+        LIMIT $2
         """
         
         search_pattern = f"%{query}%"

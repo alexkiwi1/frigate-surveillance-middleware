@@ -41,7 +41,7 @@ class ViolationQueries:
         Returns:
             List of violation records with employee names and media URLs
         """
-        camera_filter = f"AND p.camera = '{camera}'" if camera else ""
+        camera_filter = f"AND camera = '{camera}'" if camera else ""
         
         query = f"""
         WITH recent_phones AS (
