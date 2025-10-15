@@ -153,9 +153,8 @@ class BackgroundTaskManager:
                 )
                 
                 # Refresh camera summaries
-                from ..config import CAMERAS
                 camera_summaries = []
-                for camera in CAMERAS:
+                for camera in settings.CAMERAS:
                     try:
                         summary = await CameraQueries.get_camera_summary(
                             db=self.db_manager,
@@ -212,7 +211,7 @@ class BackgroundTaskManager:
                 cache_size = cache_info.get("used_memory_human", "unknown")
                 
                 # Clean up old violation data (older than 7 days)
-                cutoff_time = get_past_timestamp(days=7)
+                cutoff_time = get_timestamp_ago(hours=7*24)  # 7 days
                 
                 # This would require implementing a cleanup query
                 # For now, just log cache statistics

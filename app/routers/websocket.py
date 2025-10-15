@@ -403,10 +403,8 @@ async def websocket_dashboard(
             # Get camera summaries
             from ..services.queries import CameraQueries
             from ..utils.formatting import format_camera_summary
-            from ..config import CAMERAS
-            
             camera_summaries = []
-            for camera in CAMERAS[:5]:  # Top 5 cameras
+            for camera in settings.CAMERAS[:5]:  # Top 5 cameras
                 try:
                     summary = await CameraQueries.get_camera_summary(db=db_manager, camera=camera)
                     if summary:
