@@ -66,12 +66,12 @@ class ViolationQueries:
             SELECT DISTINCT ON (rp.timestamp, rp.camera)
                 rp.timestamp, 
                 rp.camera,
-                f.data->>'sub_label' as employee_name,
+                (f.data->'sub_label'->>0) as employee_name,
                 f.data->>'score' as confidence
             FROM recent_phones rp
             LEFT JOIN timeline f ON 
                 f.camera = rp.camera 
-                AND f.source = 'face'
+                AND f.source = 'tracked_object'
                 AND ABS(f.timestamp - rp.timestamp) < {face_window}
             ORDER BY rp.timestamp, rp.camera, ABS(f.timestamp - rp.timestamp)
         )
@@ -143,11 +143,13 @@ class ViolationQueries:
                 SELECT DISTINCT ON (p.timestamp, p.camera)
                     p.timestamp, 
                     p.camera,
-                    f.data->>'sub_label' as employee_name
+                    (f.data->'sub_label'->>0) as employee_name
                 FROM timeline p
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
-                    AND f.source = 'face'
+                    AND f.source = 'tracked_object'
+                    AND f.data->'sub_label' IS NOT NULL
+                    AND f.data->'sub_label'->>0 IS NOT NULL
                     AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
                 AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
@@ -204,15 +206,16 @@ class EmployeeQueries:
         query = f"""
         WITH employee_detections AS (
             SELECT 
-                data->>'sub_label' as employee_name,
+                (data->'sub_label'->>0) as employee_name,
                 COUNT(*) as detections,
                 COUNT(DISTINCT camera) as cameras_visited,
                 MAX(timestamp) as last_seen
             FROM timeline
-            WHERE source = 'face'
+            WHERE source = 'tracked_object'
             AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
-            AND data->>'sub_label' IS NOT NULL
-            GROUP BY data->>'sub_label'
+            AND data->'sub_label' IS NOT NULL
+            AND data->'sub_label'->>0 IS NOT NULL
+            GROUP BY (data->'sub_label'->>0)
         ),
         employee_violations AS (
             SELECT 
@@ -223,11 +226,13 @@ class EmployeeQueries:
                 SELECT DISTINCT ON (p.timestamp, p.camera)
                     p.timestamp, 
                     p.camera,
-                    f.data->>'sub_label' as employee_name
+                    (f.data->'sub_label'->>0) as employee_name
                 FROM timeline p
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
-                    AND f.source = 'face'
+                    AND f.source = 'tracked_object'
+                    AND f.data->'sub_label' IS NOT NULL
+                    AND f.data->'sub_label'->>0 IS NOT NULL
                     AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
                 AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
@@ -277,6 +282,9 @@ class EmployeeQueries:
         Returns:
             List of violations for the employee
         """
+        # Get face detection window
+        face_window = int(settings.face_detection_window)
+        
         time_filter = ""
         if start_time and end_time:
             time_filter = f"AND p.timestamp BETWEEN {start_time} AND {end_time}"
@@ -292,12 +300,12 @@ class EmployeeQueries:
                 p.camera,
                 p.source_id,
                 p.data->'zones' as zones,
-                f.data->>'sub_label' as employee_name,
+                (f.data->'sub_label'->>0) as employee_name,
                 f.data->>'score' as confidence
             FROM timeline p
             LEFT JOIN timeline f ON 
                 f.camera = p.camera 
-                AND f.source = 'face'
+                AND f.source = 'tracked_object'
                 AND ABS(f.timestamp - p.timestamp) < {face_window}
             WHERE p.data->>'label' = 'cell phone'
             AND f.data->>'sub_label' = '{employee_name}'
@@ -487,11 +495,13 @@ class DashboardQueries:
                 SELECT DISTINCT ON (p.timestamp, p.camera)
                     p.timestamp, 
                     p.camera,
-                    f.data->>'sub_label' as employee_name
+                    (f.data->'sub_label'->>0) as employee_name
                 FROM timeline p
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
-                    AND f.source = 'face'
+                    AND f.source = 'tracked_object'
+                    AND f.data->'sub_label' IS NOT NULL
+                    AND f.data->'sub_label'->>0 IS NOT NULL
                     AND ABS(f.timestamp - p.timestamp) < {face_window}
                 WHERE p.data->>'label' = 'cell phone'
                 AND p.timestamp > (SELECT day_start FROM today_start)

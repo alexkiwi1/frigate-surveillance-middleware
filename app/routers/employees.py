@@ -143,6 +143,9 @@ async def get_employee_violations(
         # Validate timestamp range
         start_time, end_time = await validate_timestamp_range(start_time, end_time)
         
+        # Get face detection window
+        face_window = int(settings.face_detection_window)
+        
         # Generate cache key
         cache_key = CacheKeys.employee_violations(employee_name, start_time, end_time, limit)
         
@@ -172,15 +175,17 @@ async def get_employee_violations(
         pagination_info = None
         if len(formatted_violations) >= limit:
             # Get total count for pagination
-            count_query = """
+            count_query = f"""
             SELECT COUNT(*) as total
             FROM timeline p
             LEFT JOIN timeline f ON 
                 f.camera = p.camera 
-                AND f.source = 'face'
-                AND ABS(f.timestamp - p.timestamp) < 3
+                AND f.source = 'tracked_object'
+                AND f.data->'sub_label' IS NOT NULL
+                AND f.data->'sub_label'->>0 IS NOT NULL
+                AND ABS(f.timestamp - p.timestamp) < {face_window}
             WHERE p.data->>'label' = 'cell phone'
-            AND f.data->>'sub_label' = $1
+            AND (f.data->'sub_label'->>0) = $1
             """
             time_params = [employee_name]
             if start_time and end_time:
@@ -269,6 +274,9 @@ async def get_employee_activity(
         JSON response with employee activity summary
     """
     try:
+        # Get face detection window
+        face_window = int(settings.face_detection_window)
+        
         # Generate cache key
         cache_key = f"employees:{employee_name}:activity:{hours}"
         
@@ -293,8 +301,10 @@ async def get_employee_activity(
             data->'zones' as zones,
             data->>'score' as confidence
         FROM timeline
-        WHERE source = 'face'
-        AND data->>'sub_label' = $1
+        WHERE source = 'tracked_object'
+        AND data->'sub_label' IS NOT NULL
+        AND data->'sub_label'->>0 IS NOT NULL
+        AND data->'sub_label'->>0 = $1
         AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         ORDER BY timestamp DESC
         LIMIT 100
@@ -310,8 +320,10 @@ async def get_employee_activity(
             MAX(timestamp) as last_seen,
             MAX(timestamp) - MIN(timestamp) as duration
         FROM timeline
-        WHERE source = 'face'
-        AND data->>'sub_label' = $1
+        WHERE source = 'tracked_object'
+        AND data->'sub_label' IS NOT NULL
+        AND data->'sub_label'->>0 IS NOT NULL
+        AND data->'sub_label'->>0 = $1
         AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         GROUP BY camera
         ORDER BY visits DESC
@@ -330,7 +342,7 @@ async def get_employee_activity(
             AND f.source = 'face'
             AND ABS(f.timestamp - p.timestamp) < 3
         WHERE p.data->>'label' = 'cell phone'
-        AND f.data->>'sub_label' = $1
+        AND (f.data->'sub_label'->>0) = $1
         AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         """
         violation_summary = await db.fetch_one(violation_summary_query, employee_name, hours * 3600)
@@ -341,13 +353,26 @@ async def get_employee_activity(
             EXTRACT(HOUR FROM to_timestamp(timestamp)) as hour,
             COUNT(*) as detections
         FROM timeline
-        WHERE source = 'face'
-        AND data->>'sub_label' = $1
+        WHERE source = 'tracked_object'
+        AND data->'sub_label' IS NOT NULL
+        AND data->'sub_label'->>0 IS NOT NULL
+        AND data->'sub_label'->>0 = $1
         AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
         GROUP BY EXTRACT(HOUR FROM to_timestamp(timestamp))
         ORDER BY hour
         """
         hourly_pattern = await db.fetch_all(hourly_pattern_query, employee_name, hours * 3600)
+        
+        # Convert Decimal types to appropriate types for JSON serialization
+        def convert_decimals(obj):
+            if isinstance(obj, dict):
+                return {k: convert_decimals(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_decimals(item) for item in obj]
+            elif hasattr(obj, 'as_tuple'):  # Decimal type
+                return float(obj)
+            else:
+                return obj
         
         # Compile activity summary
         activity_summary = {
@@ -366,6 +391,9 @@ async def get_employee_activity(
             "activity_level": "high" if len(detections) >= settings.high_activity_threshold else 
                             "medium" if len(detections) >= settings.medium_activity_threshold else "low"
         }
+        
+        # Convert all Decimal values in the activity summary
+        activity_summary = convert_decimals(activity_summary)
         
         # Cache the results
         await cache.set(cache_key, activity_summary, settings.cache_ttl_employee_stats)
@@ -432,14 +460,15 @@ async def search_employees(
         
         search_query = """
         SELECT DISTINCT
-            data->>'sub_label' as employee_name,
+            (data->'sub_label'->>0) as employee_name,
             COUNT(*) as detection_count,
             MAX(timestamp) as last_seen
         FROM timeline
-        WHERE source = 'face'
-        AND data->>'sub_label' IS NOT NULL
-        AND LOWER(data->>'sub_label') LIKE LOWER($1)
-        GROUP BY data->>'sub_label'
+        WHERE source = 'tracked_object'
+        AND data->'sub_label' IS NOT NULL
+        AND data->'sub_label'->>0 IS NOT NULL
+        AND LOWER(data->'sub_label'->>0) LIKE LOWER($1)
+        GROUP BY (data->'sub_label'->>0)
         ORDER BY detection_count DESC, last_seen DESC
         LIMIT $2
         """
