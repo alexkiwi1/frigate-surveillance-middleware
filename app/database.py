@@ -328,7 +328,7 @@ class QueryBuilder:
             COALESCE(nf.confidence::float, 0.0) as confidence,
             rs.thumb_path as thumbnail_url,
             CONCAT('{settings.video_api_base_url}/clip/', rp.source_id) as video_url,
-            CONCAT('{settings.video_api_base_url}/snapshot/', rp.camera, '/', rp.timestamp, '-', rp.source_id) as snapshot_url
+            CONCAT('{settings.video_api_base_url}/snapshot/', rp.camera, '/', rp.timestamp, '-', SUBSTRING(MD5(rp.source_id), 1, 6)) as snapshot_url
         FROM recent_phones rp
         LEFT JOIN nearby_faces nf USING (timestamp, camera)
         LEFT JOIN reviewsegment rs ON 

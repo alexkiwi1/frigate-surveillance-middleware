@@ -423,7 +423,7 @@ async def get_employee_breaks(
                 # Generate snapshot URL if available
                 snapshot_url = None
                 if detections[i].get('camera'):
-                    snapshot_url = f"{settings.video_api_base_url}/snapshot/{detections[i]['camera']}/{int(current_time)}-{employee_name.replace(' ', '_')}"
+                    snapshot_url = f"{settings.video_api_base_url}/snapshot/{detections[i]['camera']}/{current_time}-{employee_name.replace(' ', '_')[:6]}"
                 
                 breaks.append(BreakDetail(
                     start_time=break_start,

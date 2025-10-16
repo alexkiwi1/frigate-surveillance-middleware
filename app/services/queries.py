@@ -59,7 +59,7 @@ class ViolationQueries:
             0.0 as confidence,
             CONCAT('{settings.video_api_base_url}/thumb/', source_id) as thumbnail_url,
             CONCAT('{settings.video_api_base_url}/clip/', source_id) as video_url,
-            CONCAT('{settings.video_api_base_url}/snapshot/', camera, '/', timestamp, '-', source_id) as snapshot_url
+            CONCAT('{settings.video_api_base_url}/snapshot/', camera, '/', timestamp, '-', SUBSTRING(MD5(source_id), 1, 6)) as snapshot_url
         FROM timeline
         WHERE data->>'label' = 'cell phone'
         AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
@@ -309,7 +309,7 @@ class EmployeeQueries:
             COALESCE(ev.confidence::float, 0.0) as confidence,
             CONCAT('{settings.video_api_base_url}/thumb/', ev.source_id) as thumbnail_url,
             CONCAT('{settings.video_api_base_url}/clip/', ev.source_id) as video_url,
-            CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.timestamp, '-', ev.source_id) as snapshot_url
+            CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.timestamp, '-', SUBSTRING(MD5(ev.source_id), 1, 6)) as snapshot_url
         FROM employee_violations ev
         ORDER BY ev.timestamp DESC
         LIMIT {limit}

@@ -513,7 +513,7 @@ async def get_violation_duration(
         # Generate media URLs
         video_url = f"{settings.video_api_base_url}/clip/{violation_id}"
         thumbnail_url = f"{settings.video_api_base_url}/thumb/{violation_id}"
-        snapshot_url = f"{settings.video_api_base_url}/snapshot/{camera}/{int(violation_start)}-{violation_id}"
+        snapshot_url = f"{settings.video_api_base_url}/snapshot/{camera}/{violation_start}-{violation_id[:6]}"
         
         # Format response
         duration_data = {
