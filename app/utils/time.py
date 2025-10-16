@@ -28,18 +28,21 @@ def get_today_start_timestamp() -> float:
     return today_start.timestamp()
 
 
-def timestamp_to_datetime(timestamp: Union[float, int], 
-                         timezone_name: str = "Asia/Karachi") -> datetime:
+def timestamp_to_datetime(timestamp: Union[float, int, None], 
+                         timezone_name: str = "Asia/Karachi") -> Optional[datetime]:
     """
     Convert Unix timestamp to datetime with timezone.
     
     Args:
-        timestamp: Unix timestamp (float or int)
+        timestamp: Unix timestamp (float or int) or None
         timezone_name: Target timezone (default: Asia/Karachi)
         
     Returns:
-        datetime object in specified timezone
+        datetime object in specified timezone or None
     """
+    if timestamp is None:
+        return None
+    
     # Convert Decimal to float if needed
     if hasattr(timestamp, 'as_tuple'):  # Decimal type
         timestamp = float(timestamp)
@@ -62,38 +65,38 @@ def datetime_to_timestamp(dt: datetime) -> float:
     return dt.timestamp()
 
 
-def timestamp_to_iso(timestamp: Union[float, int], 
-                    timezone_name: str = "Asia/Karachi") -> str:
+def timestamp_to_iso(timestamp: Union[float, int, None], 
+                    timezone_name: str = "Asia/Karachi") -> Optional[str]:
     """
     Convert Unix timestamp to ISO format string.
     
     Args:
-        timestamp: Unix timestamp
+        timestamp: Unix timestamp or None
         timezone_name: Target timezone
         
     Returns:
-        ISO format string
+        ISO format string or None
     """
     dt = timestamp_to_datetime(timestamp, timezone_name)
-    return dt.isoformat()
+    return dt.isoformat() if dt is not None else None
 
 
-def timestamp_to_readable(timestamp: Union[float, int], 
+def timestamp_to_readable(timestamp: Union[float, int, None], 
                          timezone_name: str = "Asia/Karachi",
-                         format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
+                         format_str: str = "%Y-%m-%d %H:%M:%S") -> Optional[str]:
     """
     Convert Unix timestamp to readable string format.
     
     Args:
-        timestamp: Unix timestamp
+        timestamp: Unix timestamp or None
         timezone_name: Target timezone
         format_str: strftime format string
         
     Returns:
-        Formatted string
+        Formatted string or None
     """
     dt = timestamp_to_datetime(timestamp, timezone_name)
-    return dt.strftime(format_str)
+    return dt.strftime(format_str) if dt is not None else None
 
 
 def get_hour_buckets(hours: int = 24) -> list[tuple[float, float]]:
@@ -154,16 +157,19 @@ def get_time_range_string(start_time: Union[float, int],
     return f"{start_str} - {end_str}"
 
 
-def get_relative_time_string(timestamp: Union[float, int]) -> str:
+def get_relative_time_string(timestamp: Union[float, int, None]) -> Optional[str]:
     """
     Get relative time string (e.g., "2 hours ago", "5 minutes ago").
     
     Args:
-        timestamp: Unix timestamp
+        timestamp: Unix timestamp or None
         
     Returns:
-        Relative time string
+        Relative time string or None
     """
+    if timestamp is None:
+        return None
+    
     now = get_current_timestamp()
     diff = now - timestamp
     

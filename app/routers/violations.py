@@ -107,13 +107,10 @@ async def get_live_violations(
         
     except Exception as e:
         logger.error(f"Error retrieving live violations: {e}")
-        return JSONResponse(
-            content=create_error_json_response(
-                "Failed to retrieve live violations",
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                {"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            "Failed to retrieve live violations",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"error": str(e)}
         )
 
 
@@ -175,13 +172,10 @@ async def get_hourly_trend(
         
     except Exception as e:
         logger.error(f"Error retrieving hourly trend: {e}")
-        return JSONResponse(
-            content=create_error_json_response(
-                "Failed to retrieve hourly trend",
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                {"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            "Failed to retrieve hourly trend",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"error": str(e)}
         )
 
 
@@ -326,13 +320,10 @@ async def get_violation_stats(
         
     except Exception as e:
         logger.error(f"Error retrieving violation stats: {e}")
-        return JSONResponse(
-            content=create_error_json_response(
-                "Failed to retrieve violation statistics",
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                {"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            "Failed to retrieve violation statistics",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"error": str(e)}
         )
 
 
@@ -377,11 +368,8 @@ async def clear_violation_cache(
         
     except Exception as e:
         logger.error(f"Error clearing violation cache: {e}")
-        return JSONResponse(
-            content=create_error_json_response(
-                "Failed to clear violation cache",
-                status.HTTP_500_INTERNAL_SERVER_ERROR,
-                {"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            "Failed to clear violation cache",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"error": str(e)}
         )
