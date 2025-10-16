@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from ..database import DatabaseManager
 from ..cache import CacheManager, CacheUtils
-from ..dependencies import DatabaseDep, CacheDep, CameraDep, LimitDep, HoursDep
+from ..dependencies import DatabaseDep, CacheDep, CameraDep, LimitDep, HoursDep, get_database_manager, get_cache_manager
 from ..models import (
     LiveViolationsResponse, 
     HourlyTrendResponse,
@@ -26,6 +26,8 @@ from ..utils.response_formatter import (
     format_hourly_trend_data,
     handle_api_error
 )
+from ..utils.time import timestamp_to_iso
+from ..config import settings
 from ..utils.errors import (
     ValidationError,
     NotFoundError,
@@ -372,4 +374,183 @@ async def clear_violation_cache(
             "Failed to clear violation cache",
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             {"error": str(e)}
+        )
+
+
+@router.get("/{violation_id}/duration", response_class=JSONResponse)
+async def get_violation_duration(
+    violation_id: str,
+    db: DatabaseManager = Depends(get_database_manager),
+    cache: CacheManager = Depends(get_cache_manager)
+) -> JSONResponse:
+    """
+    Get detailed duration information for a specific violation.
+    
+    Analyzes consecutive cell phone detections within ±2 minute window
+    to calculate actual violation duration and related data.
+    
+    Args:
+        violation_id: The violation ID to analyze
+        db: Database manager dependency
+        cache: Cache manager dependency
+        
+    Returns:
+        JSONResponse with violation duration details including:
+        - Start and end times
+        - Duration in seconds
+        - Detection count
+        - Average confidence
+        - Employee name
+        - Desk zone
+        - Media URLs
+    """
+    try:
+        # Check cache first
+        cache_key = f"violation_duration:{violation_id}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return create_json_response(
+                data=cached_result,
+                message=f"Violation duration for {violation_id}"
+            )
+        
+        # Get violation details from reviewsegment
+        violation_query = """
+        SELECT 
+            camera,
+            start_time,
+            end_time,
+            thumb_path,
+            data
+        FROM reviewsegment
+        WHERE id = $1
+        """
+        
+        violation_result = await db.fetch_one(violation_query, violation_id)
+        
+        if not violation_result:
+            return create_error_json_response(
+                f"Violation {violation_id} not found",
+                status.HTTP_404_NOT_FOUND
+            )
+        
+        camera = violation_result['camera']
+        violation_start = violation_result['start_time']
+        violation_end = violation_result['end_time']
+        
+        # Get all cell phone detections in the same zone within ±2 minute window
+        # First, get the zone from the violation data
+        zones = violation_result.get('data', {}).get('zones', [])
+        if not zones:
+            return create_error_json_response(
+                f"No zones found for violation {violation_id}",
+                status.HTTP_404_NOT_FOUND
+            )
+        
+        zone = zones[0]  # Use first zone
+        
+        # Query timeline for consecutive cell phone detections
+        timeline_query = """
+        SELECT 
+            timestamp,
+            data->>'confidence' as confidence,
+            data->>'zones' as zones
+        FROM timeline
+        WHERE data->>'label' = 'cell phone'
+        AND data->'zones' ? $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        ORDER BY timestamp ASC
+        """
+        
+        # Expand search window by ±2 minutes
+        search_start = violation_start - 120  # 2 minutes before
+        search_end = violation_end + 120      # 2 minutes after
+        
+        detections = await db.fetch_all(timeline_query, zone, search_start, search_end)
+        
+        if not detections:
+            return create_error_json_response(
+                f"No cell phone detections found for violation {violation_id}",
+                status.HTTP_404_NOT_FOUND
+            )
+        
+        # Find employee name from face detections in same timeframe
+        employee_query = """
+        SELECT 
+            data->>'label' as employee_name,
+            data->>'confidence' as confidence
+        FROM timeline
+        WHERE data->>'label' IS NOT NULL
+        AND data->>'label' != 'cell phone'
+        AND data->'zones' ? $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        ORDER BY ABS(timestamp - $4) ASC
+        LIMIT 1
+        """
+        
+        employee_result = await db.fetch_one(
+            employee_query, 
+            zone, 
+            search_start, 
+            search_end, 
+            violation_start
+        )
+        
+        employee_name = employee_result['employee_name'] if employee_result else "Unknown"
+        
+        # Calculate duration and statistics
+        detection_times = [d['timestamp'] for d in detections]
+        actual_start = min(detection_times)
+        actual_end = max(detection_times)
+        duration_seconds = int(actual_end - actual_start)
+        
+        # Calculate average confidence
+        confidences = [float(d['confidence']) for d in detections if d['confidence']]
+        avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        
+        # Generate media URLs
+        video_url = f"{settings.video_api_base_url}/clip/{violation_id}"
+        thumbnail_url = f"{settings.video_api_base_url}/thumb/{violation_id}"
+        snapshot_url = f"{settings.video_api_base_url}/snapshot/{camera}/{int(violation_start)}-{violation_id}"
+        
+        # Format response
+        duration_data = {
+            "violation_id": violation_id,
+            "start_time": timestamp_to_iso(actual_start),
+            "end_time": timestamp_to_iso(actual_end),
+            "duration_seconds": duration_seconds,
+            "duration_formatted": f"{duration_seconds // 60}m {duration_seconds % 60}s",
+            "detection_count": len(detections),
+            "avg_confidence": round(avg_confidence, 3),
+            "employee_name": employee_name,
+            "desk_zone": zone,
+            "camera": camera,
+            "video_url": video_url,
+            "thumbnail_url": thumbnail_url,
+            "snapshot_url": snapshot_url,
+            "detection_timeline": [
+                {
+                    "timestamp": timestamp_to_iso(d['timestamp']),
+                    "confidence": float(d['confidence']) if d['confidence'] else 0.0
+                }
+                for d in detections
+            ]
+        }
+        
+        # Cache for 5 minutes
+        await cache.set(cache_key, duration_data, 300)
+        
+        return create_json_response(
+            data=duration_data,
+            message=f"Violation duration for {violation_id}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting violation duration for {violation_id}: {e}")
+        return create_error_json_response(
+            f"Failed to get violation duration: {str(e)}",
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            {"violation_id": violation_id, "error": str(e)}
         )
