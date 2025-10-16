@@ -34,7 +34,7 @@ class DatabaseManager:
                 max_size=min(settings.db_pool_size, 10),  # Cap at 10 to prevent memory issues
                 max_queries=10000,  # Reduced from 50000
                 max_inactive_connection_lifetime=180.0,  # Reduced from 300
-                command_timeout=30,  # Reduced from 60
+                command_timeout=120,  # Increased for complex queries
                 server_settings={
                     'application_name': 'frigate_dashboard_middleware',
                     'timezone': settings.timezone
@@ -234,7 +234,7 @@ class QueryBuilder:
         Returns:
             Tuple of (query_string, parameters)
         """
-        query = "SELECT * FROM frigate_timeline WHERE 1=1"
+        query = "SELECT * FROM timeline WHERE 1=1"
         params = []
         param_count = 0
         
@@ -301,7 +301,7 @@ class QueryBuilder:
                 data,
                 data->>'label' as label,
                 data->'zones' as zones
-            FROM frigate_timeline
+            FROM timeline
             WHERE data->>'label' = 'cell phone'
             AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
             {camera_filter}
@@ -313,7 +313,7 @@ class QueryBuilder:
                 f.data->>'sub_label' as employee_name,
                 f.data->>'score' as confidence
             FROM recent_phones rp
-            LEFT JOIN frigate_timeline f ON 
+            LEFT JOIN timeline f ON 
                 f.camera = rp.camera 
                 AND f.source = 'face'
                 AND ABS(f.timestamp - rp.timestamp) < 3
@@ -327,11 +327,11 @@ class QueryBuilder:
             COALESCE(nf.employee_name, 'Unknown') as employee_name,
             COALESCE(nf.confidence::float, 0.0) as confidence,
             rs.thumb_path as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/video/', rp.source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/clip/', rp.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', rp.camera, '/', rp.timestamp, '-', rp.source_id) as snapshot_url
         FROM recent_phones rp
         LEFT JOIN nearby_faces nf USING (timestamp, camera)
-        LEFT JOIN frigate_reviewsegment rs ON 
+        LEFT JOIN reviewsegment rs ON 
             rs.camera = rp.camera 
             AND ABS(rs.start_time - rp.timestamp) < 5
         ORDER BY rp.timestamp DESC
@@ -358,7 +358,7 @@ class QueryBuilder:
                 COUNT(*) as detections,
                 COUNT(DISTINCT camera) as cameras_visited,
                 MAX(timestamp) as last_seen
-            FROM frigate_timeline
+            FROM timeline
             WHERE source = 'face'
             AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours * 3600})
             AND data->>'sub_label' IS NOT NULL
@@ -368,14 +368,14 @@ class QueryBuilder:
             SELECT 
                 COALESCE(nf.employee_name, 'Unknown') as employee_name,
                 COUNT(*) as violations_count
-            FROM frigate_timeline p
+            FROM timeline p
             LEFT JOIN (
                 SELECT DISTINCT ON (p.timestamp, p.camera)
                     p.timestamp, 
                     p.camera,
                     f.data->>'sub_label' as employee_name
-                FROM frigate_timeline p
-                LEFT JOIN frigate_timeline f ON 
+                FROM timeline p
+                LEFT JOIN timeline f ON 
                     f.camera = p.camera 
                     AND f.source = 'face'
                     AND ABS(f.timestamp - p.timestamp) < 3

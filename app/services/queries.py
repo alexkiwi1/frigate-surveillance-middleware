@@ -58,7 +58,7 @@ class ViolationQueries:
             'Unknown' as employee_name,
             0.0 as confidence,
             CONCAT('{settings.video_api_base_url}/thumb/', source_id) as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/video/', source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/clip/', source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', camera, '/', timestamp, '-', source_id) as snapshot_url
         FROM timeline
         WHERE data->>'label' = 'cell phone'
@@ -308,7 +308,7 @@ class EmployeeQueries:
             ev.employee_name,
             COALESCE(ev.confidence::float, 0.0) as confidence,
             CONCAT('{settings.video_api_base_url}/thumb/', ev.source_id) as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/video/', ev.source_id) as video_url,
+            CONCAT('{settings.video_api_base_url}/clip/', ev.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.timestamp, '-', ev.source_id) as snapshot_url
         FROM employee_violations ev
         ORDER BY ev.timestamp DESC
