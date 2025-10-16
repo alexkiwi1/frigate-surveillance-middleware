@@ -234,6 +234,13 @@ class EmployeeViolationFilters(BaseModel):
     limit: int = Field(default=100, ge=1, le=1000, description="Maximum number of results")
 
 
+class BroadcastRequest(BaseModel):
+    """Request model for WebSocket broadcast endpoint."""
+    message_type: str = Field(..., description="Type of message to broadcast")
+    data: Dict[str, Any] = Field(..., description="Message data")
+    target: str = Field(default="all", description="Target audience (all, violations, dashboard)")
+
+
 class CameraActivityFilters(BaseModel):
     """Request filters for camera activity endpoints."""
     hours: int = Field(default=24, ge=1, le=168, description="Hours to look back")

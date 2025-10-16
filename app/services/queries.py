@@ -460,6 +460,9 @@ class DashboardQueries:
         Returns:
             Dashboard overview data
         """
+        # Get face detection window
+        face_window = int(settings.face_detection_window)
+        
         query = f"""
         WITH today_start AS (
             SELECT EXTRACT(EPOCH FROM DATE_TRUNC('day', NOW())) as day_start

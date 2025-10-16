@@ -159,7 +159,7 @@ def main():
     # WebSocket Tests (basic connectivity)
     print("🔌 WEBSOCKET API")
     print("-" * 20)
-    test_endpoint("POST", "/ws/broadcast?message_type=test&target=all", "WebSocket broadcast endpoint", base_url=BASE_URL)  # POST endpoint for broadcasting
+    test_endpoint("POST", "/ws/broadcast", "WebSocket broadcast endpoint", data={"message_type": "test", "data": {"test": "data"}, "target": "all"}, base_url=BASE_URL)  # POST endpoint for broadcasting
     test_endpoint("GET", "/ws/status", "WebSocket status endpoint", base_url=BASE_URL)  # GET endpoint for status
     
     # Admin API Tests

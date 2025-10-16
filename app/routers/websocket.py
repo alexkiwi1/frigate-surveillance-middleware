@@ -15,7 +15,7 @@ from fastapi.websockets import WebSocketState
 from ..database import DatabaseManager
 from ..cache import CacheManager
 from ..dependencies import DatabaseDep, CacheDep
-from ..models import ViolationData, WebSocketMessage
+from ..models import ViolationData, WebSocketMessage, BroadcastRequest
 from ..utils.formatting import format_violation_data
 from ..services.queries import ViolationQueries
 from ..utils.time import get_current_timestamp, get_timestamp_ago
@@ -502,38 +502,34 @@ async def get_websocket_status() -> dict:
     description="Broadcast a message to all connected WebSocket clients"
 )
 async def broadcast_message(
-    message_type: str,
-    data: dict,
-    target: str = "all"
+    request: BroadcastRequest
 ) -> dict:
     """
     Broadcast a message to WebSocket clients.
     
     Args:
-        message_type: Type of message to broadcast
-        data: Message data
-        target: Target audience (all, violations, dashboard)
+        request: Broadcast request containing message_type, data, and target
         
     Returns:
         Confirmation of broadcast
     """
     try:
         message = WebSocketMessage(
-            type=message_type,
-            data=data,
+            type=request.message_type,
+            data=request.data,
             timestamp=str(get_current_timestamp())
         )
         
-        if target == "violations":
+        if request.target == "violations":
             await manager.broadcast_to_violations(message.dict())
-        elif target == "dashboard":
+        elif request.target == "dashboard":
             await manager.broadcast_to_dashboard(message.dict())
         else:
             await manager.broadcast_to_all(message.dict())
         
         return {
             "success": True,
-            "message": f"Broadcasted {message_type} to {target}",
+            "message": f"Broadcasted {request.message_type} to {request.target}",
             "connections": len(manager.all_connections)
         }
         
