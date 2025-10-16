@@ -264,7 +264,7 @@ def construct_video_url(source_id: str) -> str:
     Returns:
         Complete video URL
     """
-    return f"{settings.video_api_base_url}/clip/{source_id}"
+    return f"{settings.video_api_base_url}/video/{source_id}"
 
 
 def construct_thumbnail_url(source_id: str) -> str:
