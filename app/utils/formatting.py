@@ -357,14 +357,15 @@ def format_camera_summary(camera: Dict[str, Any]) -> Dict[str, Any]:
         Formatted camera summary data
     """
     return {
-        "camera_name": camera.get("camera_name"),
-        "violations_count": camera.get("violations_count", 0),
+        "camera": camera.get("camera"),
+        "active_people": camera.get("active_people", 0),
+        "total_detections": camera.get("total_detections", 0),
+        "phone_violations": camera.get("phone_violations", 0),
+        "recording_status": camera.get("recording_status", "unknown"),
         "last_activity": camera.get("last_activity"),
         "last_activity_iso": timestamp_to_iso(camera.get("last_activity")),
         "last_activity_readable": timestamp_to_readable(camera.get("last_activity")),
-        "last_activity_relative": get_relative_time_string(camera.get("last_activity")),
-        "status": camera.get("status", "unknown"),
-        "is_active": camera.get("is_active", False)
+        "last_activity_relative": get_relative_time_string(camera.get("last_activity"))
     }
 
 
