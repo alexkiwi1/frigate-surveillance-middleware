@@ -101,10 +101,10 @@ async def get_camera_summary(
         
     except Exception as e:
         logger.error(f"Error retrieving camera summaries: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message="Failed to retrieve camera summaries", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message="Failed to retrieve camera summaries",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -142,7 +142,7 @@ async def get_single_camera_summary(
     """
     try:
         # Generate cache key
-        cache_key = CacheKeys.camera_summary(camera_name)
+        cache_key = CacheKeys.camera_summary()
         
         # Try to get from cache first
         cached_data = await cache.get(cache_key)
@@ -176,10 +176,10 @@ async def get_single_camera_summary(
         raise
     except Exception as e:
         logger.error(f"Error retrieving summary for camera {camera_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=f"Failed to retrieve summary for camera {camera_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve summary for camera {camera_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -239,7 +239,7 @@ async def get_camera_activity(
         )
         
         # Format the data
-        formatted_activity = [format_camera_activity_data(activity) for activity in raw_activity]
+        formatted_activity = format_camera_activity_data(raw_activity)
         
         # Add pagination info if needed
         pagination_info = None
@@ -282,10 +282,10 @@ async def get_camera_activity(
         raise
     except Exception as e:
         logger.error(f"Error retrieving activity for camera {camera_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=f"Failed to retrieve activity for camera {camera_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve activity for camera {camera_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -360,10 +360,10 @@ async def get_camera_violations(
         raise
     except Exception as e:
         logger.error(f"Error retrieving violations for camera {camera_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=f"Failed to retrieve violations for camera {camera_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve violations for camera {camera_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -478,10 +478,10 @@ async def get_camera_status(
         raise
     except Exception as e:
         logger.error(f"Error retrieving status for camera {camera_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=f"Failed to retrieve status for camera {camera_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve status for camera {camera_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -562,17 +562,17 @@ async def list_cameras(
         await cache.set(cache_key, camera_list, 300)  # 5 minute cache
         logger.debug(f"Cached camera list: {cache_key}")
         
-        return JSONResponse(
-            content=create_json_response(data=camera_list, message=f"Retrieved {len(camera_list)} cameras"),
-            status_code=status.HTTP_200_OK
+        return create_json_response(
+            data=camera_list,
+            message=f"Retrieved {len(camera_list)} cameras"
         )
         
     except Exception as e:
         logger.error(f"Error retrieving camera list: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message="Failed to retrieve camera list", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message="Failed to retrieve camera list",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -620,8 +620,8 @@ async def clear_camera_cache(
         
     except Exception as e:
         logger.error(f"Error clearing camera cache: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message="Failed to clear camera cache", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message="Failed to clear camera cache",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
