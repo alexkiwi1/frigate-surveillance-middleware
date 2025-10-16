@@ -8,7 +8,8 @@ services:
       target: development
     container_name: dashboard_middleware
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "5002:5002"
     environment:
       - DEBUG=true
       - DB_HOST=10.0.20.6
@@ -16,7 +17,7 @@ services:
       - DB_NAME=frigate_db
       - DB_USER=frigate
       - DB_PASSWORD=frigate_secure_pass_2024
-      - REDIS_HOST=localhost
+      - REDIS_HOST=redis
       - REDIS_PORT=6379
       - VIDEO_API_BASE_URL=http://10.0.20.6:5001
       - TIMEZONE=Asia/Karachi
@@ -30,6 +31,9 @@ services:
       - /var/log/dashboard_middleware:/app/logs
     depends_on:
       - redis
+    networks:
+      - frigate-network
+      - internal
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
       interval: 30s
@@ -42,10 +46,14 @@ services:
     image: redis:7-alpine
     container_name: dashboard_middleware_redis
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "6379:6379"
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
+    networks:
+      - frigate-network
+      - internal
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -63,6 +71,8 @@ services:
       - REDIS_HOSTS=local:redis:6379
     depends_on:
       - redis
+    networks:
+      - internal
     profiles:
       - debug
 
@@ -71,5 +81,7 @@ volumes:
     driver: local
 
 networks:
-  default:
-    name: dashboard_middleware_network
+  frigate-network:
+    external: true
+  internal:
+    driver: bridge

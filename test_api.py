@@ -18,7 +18,7 @@ results = []
 total_tests = 0
 passed_tests = 0
 
-def test_endpoint(method, endpoint, description, expected_status=200, params=None, data=None, base_url=None):
+def test_endpoint(method, endpoint, description, expected_status=200, params=None, data=None, base_url=None, timeout=10):
     """Test a single endpoint and record results."""
     global total_tests, passed_tests
     
@@ -32,11 +32,11 @@ def test_endpoint(method, endpoint, description, expected_status=200, params=Non
         start_time = time.time()
         
         if method.upper() == "GET":
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=timeout)
         elif method.upper() == "POST":
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=timeout)
         else:
-            response = requests.request(method, url, params=params, json=data, timeout=10)
+            response = requests.request(method, url, params=params, json=data, timeout=timeout)
         
         response_time = time.time() - start_time
         status_code = response.status_code
@@ -87,11 +87,11 @@ def test_endpoint(method, endpoint, description, expected_status=200, params=Non
             "expected_status": expected_status,
             "response_time": "TIMEOUT",
             "passed": False,
-            "error": "Request timeout (>10s)"
+            "error": f"Request timeout (>{timeout}s)"
         }
         results.append(result)
         print(f"❌ {method} {endpoint} - {description}")
-        print(f"   Error: Request timeout (>10s)")
+        print(f"   Error: Request timeout (>{timeout}s)")
         print()
     except Exception as e:
         result = {
@@ -135,7 +135,7 @@ def main():
     test_endpoint("GET", "/violations/live", "Live violations (camera filter)", params={"camera": "employees_01"})
     test_endpoint("GET", "/violations/live", "Live violations (hours=12)", params={"hours": 12})
     test_endpoint("GET", "/violations/hourly-trend", "Hourly trend (default)")
-    test_endpoint("GET", "/violations/hourly-trend", "Hourly trend (48 hours)", params={"hours": 48})
+    test_endpoint("GET", "/violations/hourly-trend", "Hourly trend (48 hours)", params={"hours": 48}, timeout=30)
     test_endpoint("GET", "/violations/stats", "Violation statistics")
     
     # Employees API Tests

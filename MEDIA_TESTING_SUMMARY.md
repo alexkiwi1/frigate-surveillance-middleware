@@ -109,3 +109,6 @@
 
 **For production use**: Videos will work perfectly for surveillance playback. Thumbnails and snapshots would need Frigate configuration changes to enable generation.
 
+
+
+

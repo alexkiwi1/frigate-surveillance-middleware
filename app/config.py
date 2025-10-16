@@ -40,11 +40,13 @@ class DatabaseConfig(BaseSettings):
 class CacheConfig(BaseSettings):
     """Cache configuration settings."""
     
-    host: str = Field(default="localhost", env="REDIS_HOST")
-    port: int = Field(default=6379, env="REDIS_PORT")
-    password: Optional[str] = Field(default=None, env="REDIS_PASSWORD")
-    db: int = Field(default=0, env="REDIS_DB")
-    max_connections: int = Field(default=20, env="REDIS_MAX_CONNECTIONS")
+    model_config = {"env_prefix": "REDIS_"}
+    
+    host: str = Field(default="localhost")
+    port: int = Field(default=6379)
+    password: Optional[str] = Field(default=None)
+    db: int = Field(default=0)
+    max_connections: int = Field(default=20)
     
     @validator('port')
     def validate_port(cls, v):
@@ -164,6 +166,8 @@ class LoggingConfig(BaseSettings):
 
 class Settings(BaseSettings):
     """Main application settings following FastAPI best practices."""
+    
+    model_config = {"env_nested_delimiter": "__"}
     
     # Application metadata
     app_name: str = Field(default="Frigate Dashboard Middleware", env="APP_NAME")
@@ -374,10 +378,6 @@ class Settings(BaseSettings):
         """Get background health check interval for backward compatibility."""
         return self.background_tasks.health_check_interval
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
 
 # Cache key constants following naming conventions

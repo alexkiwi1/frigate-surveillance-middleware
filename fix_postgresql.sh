@@ -122,3 +122,6 @@ echo "Then restart PostgreSQL: systemctl restart postgresql"
 echo ""
 
 echo "✅ Script completed! Follow the manual steps above to complete the fix."
+
+
+

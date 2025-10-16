@@ -234,3 +234,6 @@ If issues persist after these changes:
 2. Monitor system memory: `free -h` and `top`
 3. Check shared memory: `ipcs -m`
 4. Verify configuration: `SHOW ALL;` in PostgreSQL
+
+
+

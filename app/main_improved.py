@@ -758,3 +758,6 @@ logger.info(f"Database: {settings.database.host}:{settings.database.port}/{setti
 logger.info(f"Cache: {settings.cache.host}:{settings.cache.port}")
 logger.info(f"Video API: {settings.video_api.base_url}")
 
+
+
+
