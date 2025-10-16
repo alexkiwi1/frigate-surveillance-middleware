@@ -21,7 +21,7 @@ import yaml
 from .config import settings
 from .database import db_manager
 from .cache import cache_manager
-from .routers import violations, employees, cameras, websocket, recent_media
+from .routers import violations, employees, cameras, websocket, recent_media, zones, attendance, dashboard
 from .services.background import start_background_tasks, stop_background_tasks
 from .utils.response_formatter import create_error_json_response, create_json_response
 from .utils.errors import (
@@ -246,6 +246,9 @@ try:
     app.include_router(cameras.router)
     app.include_router(websocket.router)
     app.include_router(recent_media.router)
+    app.include_router(zones.router)
+    app.include_router(attendance.router)
+    app.include_router(dashboard.router)
     logger.info("All routers included successfully")
 except Exception as e:
     logger.error(f"Failed to include routers: {e}", exc_info=True)
@@ -281,6 +284,10 @@ async def root() -> JSONResponse:
                 "violations": "/api/violations/*",
                 "employees": "/api/employees/*",
                 "cameras": "/api/cameras/*",
+                "zones": "/api/zones/*",
+                "attendance": "/api/attendance/*",
+                "dashboard": "/api/dashboard/*",
+                "recent_media": "/api/recent-media/*",
                 "websocket": "/ws/*"
             },
             "timestamp": timestamp_to_iso(time.time())

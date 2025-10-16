@@ -1,523 +1,670 @@
 """
-Employee endpoints for the Frigate Dashboard Middleware.
+Employee-related API endpoints for Frigate Dashboard Middleware.
 
-This module provides REST API endpoints for retrieving employee statistics,
-violation history, and related employee data with caching.
+This module provides comprehensive employee tracking and analytics APIs including:
+- Current status and location
+- Work hours and attendance
+- Break tracking
+- Activity timeline
+- Zone movements
 """
 
-import logging
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
-from ..database import DatabaseManager
-from ..cache import CacheManager
-from ..dependencies import DatabaseDep, CacheDep, LimitDep, HoursDep, validate_timestamp_range
-from ..models import (
-    EmployeeStatsResponse,
-    EmployeeViolationsResponse,
-    EmployeeStats,
-    ViolationData
-)
-from ..utils.response_formatter import create_json_response, create_error_json_response
-from ..services.queries import EmployeeQueries
-from ..utils.formatting import format_employee_stats, format_violation_data, paginate_results
-from ..config import CacheKeys, settings
-from ..utils.errors import ValidationError, NotFoundError, DatabaseError, CacheError
-
-logger = logging.getLogger(__name__)
+from app.database import DatabaseManager, get_database
+from app.cache import CacheManager, get_cache
+from app.config import settings
+from app.utils.response_formatter import format_success_response, format_error_response
+from app.utils.time import timestamp_to_iso
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
 
-@router.get(
-    "/stats",
-    response_model=EmployeeStatsResponse,
-    summary="Get employee statistics",
-    description="Retrieve comprehensive employee statistics including activity levels and violation counts"
-)
-async def get_employee_stats(
-    hours: int = HoursDep,
-    db: DatabaseManager = DatabaseDep,
-    cache: CacheManager = CacheDep
-) -> dict:
+# Pydantic models for request/response
+class EmployeeCurrentStatus(BaseModel):
+    """Employee current status response model."""
+    employee_name: str = Field(..., description="Employee name")
+    current_zone: Optional[str] = Field(None, description="Current zone/desk")
+    camera: Optional[str] = Field(None, description="Camera name")
+    status: str = Field(..., description="Status: active, on_break, left")
+    last_seen: Optional[str] = Field(None, description="Last seen timestamp (ISO)")
+    time_since_detection: Optional[str] = Field(None, description="Time since last detection")
+    confidence: Optional[float] = Field(None, description="Detection confidence")
+
+
+class WorkHours(BaseModel):
+    """Employee work hours response model."""
+    employee_name: str = Field(..., description="Employee name")
+    date: str = Field(..., description="Date (YYYY-MM-DD)")
+    arrival: Optional[str] = Field(None, description="Arrival time (ISO)")
+    departure: Optional[str] = Field(None, description="Departure time (ISO)")
+    total_time: Optional[str] = Field(None, description="Total time in office")
+    office_time: Optional[str] = Field(None, description="Office time (excluding breaks)")
+    break_time: Optional[str] = Field(None, description="Total break time")
+    breaks: List[Dict[str, Any]] = Field(default_factory=list, description="Break details")
+    violations_count: int = Field(default=0, description="Number of phone violations")
+    status: str = Field(..., description="Current status")
+
+
+class BreakDetail(BaseModel):
+    """Break detail model."""
+    start_time: str = Field(..., description="Break start time (ISO)")
+    end_time: str = Field(..., description="Break end time (ISO)")
+    duration: str = Field(..., description="Break duration")
+    location: Optional[str] = Field(None, description="Zone during break")
+    snapshot_url: Optional[str] = Field(None, description="Snapshot URL if available")
+
+
+class ActivityEvent(BaseModel):
+    """Activity timeline event model."""
+    time: str = Field(..., description="Event timestamp (ISO)")
+    event_type: str = Field(..., description="Event type")
+    zone: Optional[str] = Field(None, description="Zone name")
+    camera: Optional[str] = Field(None, description="Camera name")
+    additional_data: Optional[Dict[str, Any]] = Field(None, description="Additional event data")
+
+
+class ZoneMovement(BaseModel):
+    """Zone movement model."""
+    from_zone: Optional[str] = Field(None, description="Previous zone")
+    to_zone: str = Field(..., description="Current zone")
+    timestamp: str = Field(..., description="Movement timestamp (ISO)")
+    duration: Optional[str] = Field(None, description="Duration in previous zone")
+
+
+# Helper functions
+def determine_employee_status(last_seen_timestamp: float) -> str:
+    """Determine employee status based on last seen timestamp."""
+    if not last_seen_timestamp:
+        return "left"
+    
+    now = datetime.now().timestamp()
+    time_diff = now - last_seen_timestamp
+    
+    if time_diff < 300:  # < 5 minutes
+        return "active"
+    elif time_diff < 10800:  # < 3 hours
+        return "on_break"
+    else:
+        return "left"
+
+
+def calculate_time_duration(start_timestamp: float, end_timestamp: float) -> str:
+    """Calculate duration between two timestamps."""
+    if not start_timestamp or not end_timestamp:
+        return "0 minutes"
+    
+    duration_seconds = int(end_timestamp - start_timestamp)
+    hours = duration_seconds // 3600
+    minutes = (duration_seconds % 3600) // 60
+    
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
+
+# API Endpoints
+
+@router.get("/{employee_name}/current-status", response_model=Dict[str, Any])
+async def get_employee_current_status(
+    employee_name: str,
+    db: DatabaseManager = Depends(get_database),
+    cache: CacheManager = Depends(get_cache)
+):
     """
-    Get comprehensive employee statistics.
+    Get current status and location of an employee.
     
-    This endpoint returns employee statistics including:
-    - Total detections per employee
-    - Number of cameras visited
-    - Last seen timestamp
-    - Activity level classification (high/medium/low)
-    - Phone violation counts
-    
-    Args:
-        hours: Hours to analyze (1-168, default 24)
-        db: Database manager dependency
-        cache: Cache manager dependency
-        
     Returns:
-        JSON response with employee statistics
-        
-    Raises:
-        HTTPException: If database query fails
+    - Current zone/desk
+    - Camera location
+    - Status: active (<5 min), on_break (<3 hrs), left (>3 hrs)
+    - Last seen timestamp
+    - Time since last detection
     """
     try:
-        # Generate cache key
-        cache_key = CacheKeys.employee_stats()
-        
-        # Try to get from cache first
-        cached_data = await cache.get(cache_key)
-        if cached_data is not None:
-            logger.debug(f"Cache hit for employee stats: {cache_key}")
-            return create_json_response(
-                data=cached_data,
-                message="Employee stats retrieved from cache"
+        # Check cache first
+        cache_key = f"employee_status:{employee_name}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return format_success_response(
+                data=cached_result,
+                message=f"Current status for {employee_name}"
             )
         
-        # Query database
-        logger.info(f"Fetching employee stats: hours={hours}")
-        raw_stats = await EmployeeQueries.get_employee_stats(
-            db=db,
-            hours=hours
-        )
-        
-        # Format the data
-        formatted_stats = [format_employee_stats(stat) for stat in raw_stats]
-        
-        # Cache the results
-        await cache.set(cache_key, formatted_stats, settings.cache_ttl_employee_stats)
-        logger.debug(f"Cached employee stats: {cache_key}")
-        
-        return create_json_response(
-            data=formatted_stats,
-            message="Employee statistics retrieved successfully"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error retrieving employee stats: {e}")
-        return create_error_json_response(
-            message="Failed to retrieve employee statistics",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"error": str(e)}
-        )
-
-
-@router.get(
-    "/{employee_name}/violations",
-    response_model=EmployeeViolationsResponse,
-    summary="Get employee violation history",
-    description="Retrieve detailed violation history for a specific employee"
-)
-async def get_employee_violations(
-    employee_name: str,
-    start_time: Optional[float] = Query(None, description="Start timestamp filter"),
-    end_time: Optional[float] = Query(None, description="End timestamp filter"),
-    limit: int = LimitDep,
-    hours: int = HoursDep,
-    db: DatabaseManager = DatabaseDep,
-    cache: CacheManager = CacheDep
-) -> dict:
-    """
-    Get detailed violation history for a specific employee.
-    
-    This endpoint returns all phone violations for a specific employee,
-    with optional time filtering and pagination.
-    
-    Args:
-        employee_name: Name of the employee
-        start_time: Optional start timestamp filter
-        end_time: Optional end timestamp filter
-        limit: Maximum number of results (1-1000)
-        db: Database manager dependency
-        cache: Cache manager dependency
-        
-    Returns:
-        JSON response with employee violations
-        
-    Raises:
-        HTTPException: If database query fails or employee not found
-    """
-    try:
-        # Validate timestamp range
-        start_time, end_time = await validate_timestamp_range(start_time, end_time)
-        
-        # Get face detection window
-        face_window = int(settings.face_detection_window)
-        
-        # Generate cache key
-        cache_key = CacheKeys.employee_violations(employee_name, limit, hours)
-        
-        # Try to get from cache first
-        cached_data = await cache.get(cache_key)
-        if cached_data is not None:
-            logger.debug(f"Cache hit for employee violations: {cache_key}")
-            return create_json_response(data=cached_data, message="Employee violations retrieved from cache")
-        
-        # Query database
-        logger.info(f"Fetching violations for employee {employee_name}: start_time={start_time}, end_time={end_time}, limit={limit}")
-        raw_violations = await EmployeeQueries.get_employee_violations(
-            db=db,
-            employee_name=employee_name,
-            start_time=start_time,
-            end_time=end_time,
-            limit=limit
-        )
-        
-        # Format the data
-        formatted_violations = [format_violation_data(violation) for violation in raw_violations]
-        
-        # Add pagination info if needed
-        pagination_info = None
-        if len(formatted_violations) >= limit:
-            # Get total count for pagination
-            count_query = f"""
-            SELECT COUNT(*) as total
-            FROM timeline p
-            LEFT JOIN timeline f ON 
-                f.camera = p.camera 
-                AND f.source = 'tracked_object'
-                AND f.data->'sub_label' IS NOT NULL
-                AND f.data->'sub_label'->>0 IS NOT NULL
-                AND ABS(f.timestamp - p.timestamp) < {face_window}
-            WHERE p.data->>'label' = 'cell phone'
-            AND (f.data->'sub_label'->>0) = $1
-            """
-            time_params = [employee_name]
-            if start_time and end_time:
-                count_query += " AND p.timestamp BETWEEN $2 AND $3"
-                time_params.extend([start_time, end_time])
-            elif start_time:
-                count_query += " AND p.timestamp >= $2"
-                time_params.append(start_time)
-            elif end_time:
-                count_query += " AND p.timestamp <= $2"
-                time_params.append(end_time)
-            
-            count_result = await db.fetch_one(count_query, *time_params)
-            total_count = count_result['total'] if count_result else 0
-            
-            pagination_info = {
-                "page": 1,
-                "per_page": limit,
-                "total": total_count,
-                "pages": (total_count + limit - 1) // limit,
-                "has_next": total_count > limit,
-                "has_prev": False
-            }
-        
-        # Prepare response data
-        response_data = {
-            "violations": formatted_violations,
-            "employee_name": employee_name,
-            "time_range": {
-                "start_time": start_time,
-                "end_time": end_time
-            },
-            "pagination": pagination_info
-        }
-        
-        # Cache the results
-        await cache.set(cache_key, response_data, settings.cache_ttl_employee_violations)
-        logger.debug(f"Cached employee violations: {cache_key}")
-        
-        return create_json_response(data=response_data, message=f"Violations for {employee_name} retrieved successfully")
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving violations for employee {employee_name}: {e}")
-        return create_error_json_response(message=f"Failed to retrieve violations for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-        )
-
-
-@router.get(
-    "/{employee_name}/activity",
-    summary="Get employee activity summary",
-    description="Get activity summary for a specific employee including recent movements and violations"
-)
-async def get_employee_activity(
-    employee_name: str,
-    hours: int = HoursDep,
-    db: DatabaseManager = DatabaseDep,
-    cache: CacheManager = CacheDep
-) -> dict:
-    """
-    Get activity summary for a specific employee.
-    
-    This endpoint returns a comprehensive activity summary including:
-    - Recent detections and movements
-    - Camera visits and duration
-    - Violation patterns
-    - Activity timeline
-    
-    Args:
-        employee_name: Name of the employee
-        hours: Hours to analyze (1-168, default 24)
-        db: Database manager dependency
-        cache: Cache manager dependency
-        
-    Returns:
-        JSON response with employee activity summary
-    """
-    try:
-        # Get face detection window
-        face_window = int(settings.face_detection_window)
-        
-        # Generate cache key
-        cache_key = f"employees:{employee_name}:activity:{hours}"
-        
-        # Try to get from cache first
-        cached_data = await cache.get(cache_key)
-        if cached_data is not None:
-            logger.debug(f"Cache hit for employee activity: {cache_key}")
-            return create_json_response(data=cached_data, message="Employee activity retrieved from cache")
-        
-        # Query database for activity summary
-        logger.info(f"Fetching activity for employee {employee_name}: hours={hours}")
-        
-        # Get recent detections
-        detections_query = """
+        # Query latest detection for employee
+        query = """
         SELECT 
             timestamp,
             camera,
-            data->>'label' as event_type,
-            data->'zones' as zones,
-            data->>'score' as confidence
+            data->>'zones' as zones,
+            data->>'confidence' as confidence
         FROM timeline
-        WHERE source = 'tracked_object'
-        AND data->'sub_label' IS NOT NULL
-        AND data->'sub_label'->>0 IS NOT NULL
-        AND data->'sub_label'->>0 = $1
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
+        WHERE data->>'label' = $1
         ORDER BY timestamp DESC
-        LIMIT 100
-        """
-        detections = await db.fetch_all(detections_query, employee_name, hours * 3600)
-        
-        # Get camera visits
-        camera_visits_query = """
-        SELECT 
-            camera,
-            COUNT(*) as visits,
-            MIN(timestamp) as first_seen,
-            MAX(timestamp) as last_seen,
-            MAX(timestamp) - MIN(timestamp) as duration
-        FROM timeline
-        WHERE source = 'tracked_object'
-        AND data->'sub_label' IS NOT NULL
-        AND data->'sub_label'->>0 IS NOT NULL
-        AND data->'sub_label'->>0 = $1
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
-        GROUP BY camera
-        ORDER BY visits DESC
-        """
-        camera_visits = await db.fetch_all(camera_visits_query, employee_name, hours * 3600)
-        
-        # Get violation summary
-        violation_summary_query = """
-        SELECT 
-            COUNT(*) as total_violations,
-            COUNT(DISTINCT p.camera) as violation_cameras,
-            MAX(p.timestamp) as last_violation
-        FROM timeline p
-        LEFT JOIN timeline f ON 
-            f.camera = p.camera 
-            AND f.source = 'face'
-            AND ABS(f.timestamp - p.timestamp) < 3
-        WHERE p.data->>'label' = 'cell phone'
-        AND (f.data->'sub_label'->>0) = $1
-        AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
-        """
-        violation_summary = await db.fetch_one(violation_summary_query, employee_name, hours * 3600)
-        
-        # Get hourly activity pattern
-        hourly_pattern_query = """
-        SELECT 
-            EXTRACT(HOUR FROM to_timestamp(timestamp)) as hour,
-            COUNT(*) as detections
-        FROM timeline
-        WHERE source = 'tracked_object'
-        AND data->'sub_label' IS NOT NULL
-        AND data->'sub_label'->>0 IS NOT NULL
-        AND data->'sub_label'->>0 = $1
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - $2)
-        GROUP BY EXTRACT(HOUR FROM to_timestamp(timestamp))
-        ORDER BY hour
-        """
-        hourly_pattern = await db.fetch_all(hourly_pattern_query, employee_name, hours * 3600)
-        
-        # Convert Decimal types to appropriate types for JSON serialization
-        def convert_decimals(obj):
-            if isinstance(obj, dict):
-                return {k: convert_decimals(v) for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [convert_decimals(item) for item in obj]
-            elif hasattr(obj, 'as_tuple'):  # Decimal type
-                return float(obj)
-            else:
-                return obj
-        
-        # Compile activity summary
-        activity_summary = {
-            "employee_name": employee_name,
-            "time_period_hours": hours,
-            "total_detections": len(detections),
-            "cameras_visited": len(camera_visits),
-            "violation_summary": violation_summary or {
-                "total_violations": 0,
-                "violation_cameras": 0,
-                "last_violation": None
-            },
-            "camera_visits": camera_visits,
-            "recent_detections": detections[:20],  # Last 20 detections
-            "hourly_pattern": hourly_pattern,
-            "activity_level": "high" if len(detections) >= settings.high_activity_threshold else 
-                            "medium" if len(detections) >= settings.medium_activity_threshold else "low"
-        }
-        
-        # Convert all Decimal values in the activity summary
-        activity_summary = convert_decimals(activity_summary)
-        
-        # Cache the results
-        await cache.set(cache_key, activity_summary, settings.cache_ttl_employee_stats)
-        logger.debug(f"Cached employee activity: {cache_key}")
-        
-        return create_json_response(data=activity_summary, message=f"Activity summary for {employee_name} retrieved successfully")
-        
-    except Exception as e:
-        logger.error(f"Error retrieving activity for employee {employee_name}: {e}")
-        return create_error_json_response(message=f"Failed to retrieve activity for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-        )
-
-
-@router.get(
-    "/search",
-    summary="Search employees",
-    description="Search for employees by name with fuzzy matching"
-)
-async def search_employees(
-    query: str = Query(..., description="Search query", min_length=2),
-    limit: int = Query(10, ge=1, le=50, description="Maximum results"),
-    db: DatabaseManager = DatabaseDep,
-    cache: CacheManager = CacheDep
-) -> dict:
-    """
-    Search for employees by name.
-    
-    This endpoint provides fuzzy search functionality for finding employees
-    by name, useful for autocomplete and search features.
-    
-    Args:
-        query: Search query (minimum 2 characters)
-        limit: Maximum number of results (1-50)
-        db: Database manager dependency
-        cache: Cache manager dependency
-        
-    Returns:
-        JSON response with matching employees
-    """
-    try:
-        # Generate cache key
-        cache_key = f"employees:search:{query}:{limit}"
-        
-        # Try to get from cache first
-        cached_data = await cache.get(cache_key)
-        if cached_data is not None:
-            logger.debug(f"Cache hit for employee search: {cache_key}")
-            return create_json_response(data=cached_data, message="Employee search results retrieved from cache")
-        
-        # Query database for employee names
-        logger.info(f"Searching employees: query={query}, limit={limit}")
-        
-        search_query = """
-        SELECT DISTINCT
-            (data->'sub_label'->>0) as employee_name,
-            COUNT(*) as detection_count,
-            MAX(timestamp) as last_seen
-        FROM timeline
-        WHERE source = 'tracked_object'
-        AND data->'sub_label' IS NOT NULL
-        AND data->'sub_label'->>0 IS NOT NULL
-        AND LOWER(data->'sub_label'->>0) LIKE LOWER($1)
-        GROUP BY (data->'sub_label'->>0)
-        ORDER BY detection_count DESC, last_seen DESC
-        LIMIT $2
+        LIMIT 1
         """
         
-        search_pattern = f"%{query}%"
-        employees = await db.fetch_all(search_query, search_pattern, limit)
+        result = await db.fetch_one(query, employee_name)
         
-        # Format the results
-        search_results = [
-            {
-                "employee_name": emp["employee_name"],
-                "detection_count": emp["detection_count"],
-                "last_seen": emp["last_seen"],
-                "last_seen_relative": "recent" if emp["last_seen"] and (time.time() - emp["last_seen"]) < 3600 else "older"
-            }
-            for emp in employees
-        ]
-        
-        # Cache the results
-        await cache.set(cache_key, search_results, 300)  # 5 minute cache
-        logger.debug(f"Cached employee search: {cache_key}")
-        
-        return create_json_response(
-            data=search_results,
-            message=f"Found {len(search_results)} employees matching '{query}'"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error searching employees: {e}")
-        return create_error_json_response(message="Failed to search employees", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-        )
-
-
-@router.delete(
-    "/cache",
-    summary="Clear employee cache",
-    description="Clear all cached employee data"
-)
-async def clear_employee_cache(
-    cache: CacheManager = CacheDep
-) -> dict:
-    """
-    Clear all cached employee data.
-    
-    This endpoint clears all cached employee-related data, forcing fresh
-    queries on the next request.
-    
-    Args:
-        cache: Cache manager dependency
-        
-    Returns:
-        JSON response confirming cache clearing
-    """
-    try:
-        # Clear employee-related cache keys
-        patterns = [
-            "employees:stats",
-            "employees:*:violations:*",
-            "employees:*:activity:*",
-            "employees:search:*"
-        ]
-        
-        total_cleared = 0
-        for pattern in patterns:
-            cleared = await cache.clear_pattern(pattern)
-            total_cleared += cleared
-        
-        logger.info(f"Cleared {total_cleared} employee cache entries")
-        
-        return create_json_response(data=
-                {"cleared_keys": total_cleared}, message=f"Cleared {total_cleared} employee cache entries"
+        if not result:
+            return format_error_response(
+                message=f"Employee '{employee_name}' not found",
+                status_code=404
             )
         
+        # Determine status
+        last_seen_timestamp = result['timestamp']
+        status = determine_employee_status(last_seen_timestamp)
+        
+        # Get current zone (most recent zone from zones array)
+        zones = result.get('zones', [])
+        current_zone = zones[0] if zones else None
+        
+        # Format response
+        response_data = EmployeeCurrentStatus(
+            employee_name=employee_name,
+            current_zone=current_zone,
+            camera=result.get('camera'),
+            status=status,
+            last_seen=timestamp_to_iso(last_seen_timestamp) if last_seen_timestamp else None,
+            time_since_detection=f"{int((datetime.now().timestamp() - last_seen_timestamp) / 60)} minutes ago" if last_seen_timestamp else None,
+            confidence=float(result.get('confidence', 0)) if result.get('confidence') else None
+        )
+        
+        # Cache for 1 minute
+        await cache.set(cache_key, response_data.dict(), 60)
+        
+        return format_success_response(
+            data=response_data.dict(),
+            message=f"Current status for {employee_name}"
+        )
+        
     except Exception as e:
-        logger.error(f"Error clearing employee cache: {e}")
-        return create_error_json_response(message="Failed to clear employee cache", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
+        return format_error_response(
+            message=f"Error getting employee status: {str(e)}",
+            status_code=500
         )
 
 
-# Import time module for relative time calculation
-import time
+@router.get("/{employee_name}/work-hours", response_model=Dict[str, Any])
+async def get_employee_work_hours(
+    employee_name: str,
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
+    db: DatabaseManager = Depends(get_database),
+    cache: CacheManager = Depends(get_cache)
+):
+    """
+    Get work hours and attendance details for an employee on a specific date.
+    
+    Calculates:
+    - Arrival time (first detection)
+    - Departure time (last detection)
+    - Total time in office
+    - Office time (excluding breaks)
+    - Break time and details
+    - Violations count
+    """
+    try:
+        # Parse date or use today
+        if date:
+            try:
+                target_date = datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                return format_error_response(
+                    message="Invalid date format. Use YYYY-MM-DD",
+                    status_code=400
+                )
+        else:
+            target_date = datetime.now().date()
+        
+        # Get start and end timestamps for the day
+        start_timestamp = datetime.combine(target_date, datetime.min.time()).timestamp()
+        end_timestamp = datetime.combine(target_date, datetime.max.time()).timestamp()
+        
+        # Check cache
+        cache_key = f"work_hours:{employee_name}:{date or 'today'}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return format_success_response(
+                data=cached_result,
+                message=f"Work hours for {employee_name} on {target_date.strftime('%Y-%m-%d')}"
+            )
+        
+        # Get all detections for employee on the date
+        query = """
+        SELECT 
+            timestamp,
+            camera,
+            data->>'zones' as zones,
+            data->>'confidence' as confidence
+        FROM timeline
+        WHERE data->>'label' = $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        ORDER BY timestamp ASC
+        """
+        
+        detections = await db.fetch_all(query, employee_name, start_timestamp, end_timestamp)
+        
+        if not detections:
+            return format_error_response(
+                message=f"No data found for {employee_name} on {target_date.strftime('%Y-%m-%d')}",
+                status_code=404
+            )
+        
+        # Calculate work hours
+        arrival_time = detections[0]['timestamp']
+        departure_time = detections[-1]['timestamp']
+        total_time = calculate_time_duration(arrival_time, departure_time)
+        
+        # Detect breaks (gaps between detections >5min and <3hrs)
+        breaks = []
+        break_time_seconds = 0
+        
+        for i in range(len(detections) - 1):
+            current_time = detections[i]['timestamp']
+            next_time = detections[i + 1]['timestamp']
+            gap = next_time - current_time
+            
+            if 300 < gap < 10800:  # 5 minutes to 3 hours
+                break_start = timestamp_to_iso(current_time)
+                break_end = timestamp_to_iso(next_time)
+                break_duration = calculate_time_duration(current_time, next_time)
+                
+                breaks.append({
+                    "start_time": break_start,
+                    "end_time": break_end,
+                    "duration": break_duration,
+                    "location": detections[i].get('zones', [None])[0] if detections[i].get('zones') else None
+                })
+                
+                break_time_seconds += gap
+        
+        # Calculate office time (total time minus breaks)
+        office_time_seconds = (departure_time - arrival_time) - break_time_seconds
+        office_time = calculate_time_duration(0, office_time_seconds)
+        break_time = calculate_time_duration(0, break_time_seconds)
+        
+        # Count violations (cell phone detections)
+        violations_query = """
+        SELECT COUNT(*) as violation_count
+        FROM timeline
+        WHERE data->>'label' = 'cell phone'
+        AND data->>'zones' ? $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        """
+        
+        # Get employee's zones for violation counting
+        employee_zones = set()
+        for detection in detections:
+            if detection.get('zones'):
+                employee_zones.update(detection['zones'])
+        
+        violations_count = 0
+        for zone in employee_zones:
+            result = await db.fetch_one(violations_query, zone, start_timestamp, end_timestamp)
+            violations_count += result['violation_count'] if result else 0
+        
+        # Determine current status
+        current_status = determine_employee_status(departure_time)
+        
+        # Format response
+        response_data = WorkHours(
+            employee_name=employee_name,
+            date=target_date.strftime('%Y-%m-%d'),
+            arrival=timestamp_to_iso(arrival_time),
+            departure=timestamp_to_iso(departure_time),
+            total_time=total_time,
+            office_time=office_time,
+            break_time=break_time,
+            breaks=breaks,
+            violations_count=violations_count,
+            status=current_status
+        )
+        
+        # Cache for 5 minutes
+        await cache.set(cache_key, response_data.dict(), 300)
+        
+        return format_success_response(
+            data=response_data.dict(),
+            message=f"Work hours for {employee_name} on {target_date.strftime('%Y-%m-%d')}"
+        )
+        
+    except Exception as e:
+        return format_error_response(
+            message=f"Error getting work hours: {str(e)}",
+            status_code=500
+        )
+
+
+@router.get("/{employee_name}/breaks", response_model=Dict[str, Any])
+async def get_employee_breaks(
+    employee_name: str,
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
+    start_date: Optional[str] = Query(None, description="Start date in YYYY-MM-DD format"),
+    end_date: Optional[str] = Query(None, description="End date in YYYY-MM-DD format"),
+    db: DatabaseManager = Depends(get_database),
+    cache: CacheManager = Depends(get_cache)
+):
+    """
+    Get detailed break information for an employee.
+    
+    Finds gaps in detections between 5min and 3hrs.
+    Returns break details with timestamps, durations, and locations.
+    """
+    try:
+        # Determine date range
+        if date:
+            start_dt = datetime.strptime(date, "%Y-%m-%d")
+            end_dt = start_dt + timedelta(days=1)
+        elif start_date and end_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
+        else:
+            start_dt = datetime.now().date()
+            end_dt = start_dt + timedelta(days=1)
+        
+        start_timestamp = start_dt.timestamp()
+        end_timestamp = end_dt.timestamp()
+        
+        # Check cache
+        cache_key = f"breaks:{employee_name}:{date or start_date or 'today'}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return format_success_response(
+                data=cached_result,
+                message=f"Break details for {employee_name}"
+            )
+        
+        # Get all detections for employee in date range
+        query = """
+        SELECT 
+            timestamp,
+            camera,
+            data->>'zones' as zones
+        FROM timeline
+        WHERE data->>'label' = $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        ORDER BY timestamp ASC
+        """
+        
+        detections = await db.fetch_all(query, employee_name, start_timestamp, end_timestamp)
+        
+        if not detections:
+            return format_error_response(
+                message=f"No data found for {employee_name} in specified date range",
+                status_code=404
+            )
+        
+        # Detect breaks
+        breaks = []
+        
+        for i in range(len(detections) - 1):
+            current_time = detections[i]['timestamp']
+            next_time = detections[i + 1]['timestamp']
+            gap = next_time - current_time
+            
+            if 300 < gap < 10800:  # 5 minutes to 3 hours
+                break_start = timestamp_to_iso(current_time)
+                break_end = timestamp_to_iso(next_time)
+                break_duration = calculate_time_duration(current_time, next_time)
+                
+                # Get zone during break (zone before break)
+                break_zone = None
+                if detections[i].get('zones'):
+                    break_zone = detections[i]['zones'][0]
+                
+                # Generate snapshot URL if available
+                snapshot_url = None
+                if detections[i].get('camera'):
+                    snapshot_url = f"{settings.video_api_base_url}/snapshot/{detections[i]['camera']}/{int(current_time)}-{employee_name.replace(' ', '_')}"
+                
+                breaks.append(BreakDetail(
+                    start_time=break_start,
+                    end_time=break_end,
+                    duration=break_duration,
+                    location=break_zone,
+                    snapshot_url=snapshot_url
+                ).dict())
+        
+        # Cache for 5 minutes
+        await cache.set(cache_key, {"breaks": breaks}, 300)
+        
+        return format_success_response(
+            data={"breaks": breaks},
+            message=f"Break details for {employee_name}"
+        )
+        
+    except Exception as e:
+        return format_error_response(
+            message=f"Error getting break details: {str(e)}",
+            status_code=500
+        )
+
+
+@router.get("/{employee_name}/timeline", response_model=Dict[str, Any])
+async def get_employee_timeline(
+    employee_name: str,
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
+    limit: int = Query(100, description="Maximum number of events to return"),
+    db: DatabaseManager = Depends(get_database),
+    cache: CacheManager = Depends(get_cache)
+):
+    """
+    Get chronological activity timeline for an employee.
+    
+    Returns enriched events with:
+    - Arrival/departure events
+    - Zone changes
+    - Break events
+    - Violation events
+    """
+    try:
+        # Parse date or use today
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        else:
+            target_date = datetime.now().date()
+        
+        start_timestamp = datetime.combine(target_date, datetime.min.time()).timestamp()
+        end_timestamp = datetime.combine(target_date, datetime.max.time()).timestamp()
+        
+        # Check cache
+        cache_key = f"timeline:{employee_name}:{date or 'today'}:{limit}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return format_success_response(
+                data=cached_result,
+                message=f"Activity timeline for {employee_name}"
+            )
+        
+        # Get all timeline entries for employee
+        query = """
+        SELECT 
+            timestamp,
+            camera,
+            source,
+            source_id,
+            class_type,
+            data->>'zones' as zones,
+            data->>'confidence' as confidence,
+            data->>'label' as label
+        FROM timeline
+        WHERE data->>'label' = $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        ORDER BY timestamp ASC
+        LIMIT $4
+        """
+        
+        entries = await db.fetch_all(query, employee_name, start_timestamp, end_timestamp, limit)
+        
+        if not entries:
+            return format_error_response(
+                message=f"No activity found for {employee_name} on {target_date.strftime('%Y-%m-%d')}",
+                status_code=404
+            )
+        
+        # Process entries into timeline events
+        timeline_events = []
+        previous_zone = None
+        
+        for i, entry in enumerate(entries):
+            current_zone = entry.get('zones', [None])[0] if entry.get('zones') else None
+            event_type = "detection"
+            additional_data = {}
+            
+            # Determine event type
+            if i == 0:
+                event_type = "arrival"
+            elif i == len(entries) - 1:
+                event_type = "departure"
+            elif current_zone != previous_zone:
+                event_type = "zone_change"
+                additional_data = {
+                    "from_zone": previous_zone,
+                    "to_zone": current_zone
+                }
+            
+            # Check for break (gap > 5 minutes)
+            if i < len(entries) - 1:
+                next_entry = entries[i + 1]
+                gap = next_entry['timestamp'] - entry['timestamp']
+                if gap > 300:  # 5 minutes
+                    additional_data["break_duration"] = calculate_time_duration(entry['timestamp'], next_entry['timestamp'])
+            
+            timeline_events.append(ActivityEvent(
+                time=timestamp_to_iso(entry['timestamp']),
+                event_type=event_type,
+                zone=current_zone,
+                camera=entry.get('camera'),
+                additional_data=additional_data if additional_data else None
+            ).dict())
+            
+            previous_zone = current_zone
+        
+        # Cache for 2 minutes
+        await cache.set(cache_key, {"timeline": timeline_events}, 120)
+        
+        return format_success_response(
+            data={"timeline": timeline_events},
+            message=f"Activity timeline for {employee_name}"
+        )
+        
+    except Exception as e:
+        return format_error_response(
+            message=f"Error getting activity timeline: {str(e)}",
+            status_code=500
+        )
+
+
+@router.get("/{employee_name}/movements", response_model=Dict[str, Any])
+async def get_employee_movements(
+    employee_name: str,
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
+    db: DatabaseManager = Depends(get_database),
+    cache: CacheManager = Depends(get_cache)
+):
+    """
+    Track zone movements and transitions for an employee.
+    
+    Returns:
+    - Zone transitions throughout the day
+    - Duration in each zone
+    - Zones visited
+    - Total movements count
+    """
+    try:
+        # Parse date or use today
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d")
+        else:
+            target_date = datetime.now().date()
+        
+        start_timestamp = datetime.combine(target_date, datetime.min.time()).timestamp()
+        end_timestamp = datetime.combine(target_date, datetime.max.time()).timestamp()
+        
+        # Check cache
+        cache_key = f"movements:{employee_name}:{date or 'today'}"
+        cached_result = await cache.get(cache_key)
+        if cached_result:
+            return format_success_response(
+                data=cached_result,
+                message=f"Zone movements for {employee_name}"
+            )
+        
+        # Get all detections with zones
+        query = """
+        SELECT 
+            timestamp,
+            data->>'zones' as zones
+        FROM timeline
+        WHERE data->>'label' = $1
+        AND timestamp >= $2
+        AND timestamp <= $3
+        AND data->>'zones' IS NOT NULL
+        ORDER BY timestamp ASC
+        """
+        
+        entries = await db.fetch_all(query, employee_name, start_timestamp, end_timestamp)
+        
+        if not entries:
+            return format_error_response(
+                message=f"No zone data found for {employee_name} on {target_date.strftime('%Y-%m-%d')}",
+                status_code=404
+            )
+        
+        # Process movements
+        movements = []
+        zones_visited = set()
+        previous_zone = None
+        previous_timestamp = None
+        
+        for entry in entries:
+            current_zone = entry.get('zones', [None])[0] if entry.get('zones') else None
+            current_timestamp = entry['timestamp']
+            
+            if current_zone:
+                zones_visited.add(current_zone)
+                
+                if previous_zone and previous_zone != current_zone:
+                    # Zone change detected
+                    duration = calculate_time_duration(previous_timestamp, current_timestamp)
+                    
+                    movements.append(ZoneMovement(
+                        from_zone=previous_zone,
+                        to_zone=current_zone,
+                        timestamp=timestamp_to_iso(current_timestamp),
+                        duration=duration
+                    ).dict())
+                
+                previous_zone = current_zone
+                previous_timestamp = current_timestamp
+        
+        # Cache for 5 minutes
+        await cache.set(cache_key, {
+            "movements": movements,
+            "zones_visited": list(zones_visited),
+            "total_movements": len(movements)
+        }, 300)
+        
+        return format_success_response(
+            data={
+                "movements": movements,
+                "zones_visited": list(zones_visited),
+                "total_movements": len(movements)
+            },
+            message=f"Zone movements for {employee_name}"
+        )
+        
+    except Exception as e:
+        return format_error_response(
+            message=f"Error getting zone movements: {str(e)}",
+            status_code=500
+        )
