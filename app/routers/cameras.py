@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ..database import DatabaseManager
 from ..cache import CacheManager
 from ..dependencies import DatabaseDep, CacheDep, CameraDep, LimitDep, HoursDep
+from ..config import settings
 from ..models import (
     CameraSummaryResponse,
     CameraActivityResponse,
@@ -73,7 +74,7 @@ async def get_camera_summary(
         logger.info("Fetching camera summaries for all cameras")
         camera_summaries = []
         
-        for camera in CAMERAS:
+        for camera in settings.CAMERAS:
             try:
                 summary_data = await CameraQueries.get_camera_summary(db=db, camera=camera)
                 if summary_data:

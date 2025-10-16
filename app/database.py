@@ -30,11 +30,11 @@ class DatabaseManager:
             
             self.pool = await asyncpg.create_pool(
                 database_url,
-                min_size=5,
-                max_size=settings.db_pool_size,
-                max_queries=50000,
-                max_inactive_connection_lifetime=300.0,
-                command_timeout=60,
+                min_size=2,  # Reduced from 5
+                max_size=min(settings.db_pool_size, 10),  # Cap at 10 to prevent memory issues
+                max_queries=10000,  # Reduced from 50000
+                max_inactive_connection_lifetime=180.0,  # Reduced from 300
+                command_timeout=30,  # Reduced from 60
                 server_settings={
                     'application_name': 'frigate_dashboard_middleware',
                     'timezone': settings.timezone
@@ -57,6 +57,23 @@ class DatabaseManager:
             await self.pool.close()
             logger.info("Database connection pool closed")
     
+    async def _handle_connection_error(self, error: Exception, operation: str) -> None:
+        """Handle database connection errors with retry logic."""
+        if "shared memory" in str(error).lower() or "no space left" in str(error).lower():
+            logger.warning(f"PostgreSQL shared memory issue during {operation}: {error}")
+            # Wait a bit and try to reconnect
+            await asyncio.sleep(1)
+            try:
+                if self.pool:
+                    await self.pool.close()
+                await self.initialize()
+                logger.info("Database reconnected after shared memory issue")
+            except Exception as reconnect_error:
+                logger.error(f"Failed to reconnect after shared memory issue: {reconnect_error}")
+        else:
+            logger.error(f"Database error during {operation}: {error}")
+            raise
+    
     async def execute(self, query: str, *args) -> str:
         """
         Execute a query that doesn't return results.
@@ -71,8 +88,12 @@ class DatabaseManager:
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
         
-        async with self.pool.acquire() as conn:
-            return await conn.execute(query, *args)
+        try:
+            async with self.pool.acquire() as conn:
+                return await conn.execute(query, *args)
+        except Exception as e:
+            await self._handle_connection_error(e, "execute")
+            raise
     
     async def fetch_one(self, query: str, *args) -> Optional[Dict[str, Any]]:
         """
@@ -88,9 +109,13 @@ class DatabaseManager:
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
         
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(query, *args)
-            return dict(row) if row else None
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(query, *args)
+                return dict(row) if row else None
+        except Exception as e:
+            await self._handle_connection_error(e, "fetch_one")
+            raise
     
     async def fetch_all(self, query: str, *args) -> List[Dict[str, Any]]:
         """
@@ -106,9 +131,13 @@ class DatabaseManager:
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
         
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(query, *args)
-            return [dict(row) for row in rows]
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(query, *args)
+                return [dict(row) for row in rows]
+        except Exception as e:
+            await self._handle_connection_error(e, "fetch_all")
+            raise
     
     async def fetch_many(self, query: str, *args, size: int = 1000) -> List[Dict[str, Any]]:
         """
