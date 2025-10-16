@@ -757,3 +757,4 @@ logger.info(f"Timezone: {settings.timezone}")
 logger.info(f"Database: {settings.database.host}:{settings.database.port}/{settings.database.name}")
 logger.info(f"Cache: {settings.cache.host}:{settings.cache.port}")
 logger.info(f"Video API: {settings.video_api.base_url}")
+

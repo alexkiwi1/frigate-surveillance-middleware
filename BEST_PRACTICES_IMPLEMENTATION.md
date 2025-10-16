@@ -327,3 +327,4 @@ from .config_improved import settings
 **Production Readiness**: ✅ **READY**
 
 The Frigate Dashboard Middleware now follows all FastAPI best practices from the awesome-cursorrules repository, providing a robust, maintainable, and high-performance API service.
+

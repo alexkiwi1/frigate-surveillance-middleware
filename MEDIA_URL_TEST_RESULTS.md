@@ -122,3 +122,4 @@ The **middleware is functioning correctly** at 100% success rate. The media URL 
 **Media Accessibility**: ❌ **0%** (0/30 files)  
 **Root Cause**: Media files expired/deleted by Frigate retention policy
 
+

@@ -21,7 +21,7 @@ import yaml
 from .config import settings
 from .database import db_manager
 from .cache import cache_manager
-from .routers import violations, employees, cameras, websocket
+from .routers import violations, employees, cameras, websocket, recent_media
 from .services.background import start_background_tasks, stop_background_tasks
 from .utils.response_formatter import create_error_json_response, create_json_response
 from .utils.errors import (
@@ -245,6 +245,7 @@ try:
     app.include_router(employees.router)
     app.include_router(cameras.router)
     app.include_router(websocket.router)
+    app.include_router(recent_media.router)
     logger.info("All routers included successfully")
 except Exception as e:
     logger.error(f"Failed to include routers: {e}", exc_info=True)

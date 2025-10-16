@@ -392,3 +392,4 @@ async def clear_violations_cache(
     except Exception as e:
         logger.error(f"Error clearing cache: {e}")
         return handle_api_error(e, "clear violations cache")
+

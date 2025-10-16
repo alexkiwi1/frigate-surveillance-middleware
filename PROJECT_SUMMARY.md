@@ -316,3 +316,4 @@ The Frigate Dashboard Middleware is now fully functional, highly performant, and
 ---
 
 *This middleware service successfully bridges the gap between Frigate surveillance data and a modern dashboard interface, providing real-time insights and comprehensive analytics for surveillance operations.*
+
