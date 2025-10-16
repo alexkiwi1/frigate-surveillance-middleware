@@ -221,6 +221,44 @@ async def require_auth(
     return credentials
 
 
+async def validate_timestamp_range(start_time: Optional[float], end_time: Optional[float]) -> tuple[float, float]:
+    """
+    Validate and normalize timestamp range parameters.
+    
+    Args:
+        start_time: Start timestamp (Unix epoch)
+        end_time: End timestamp (Unix epoch)
+        
+    Returns:
+        Tuple of (start_time, end_time) as floats
+        
+    Raises:
+        ValidationError: If timestamps are invalid
+    """
+    import time
+    
+    current_time = time.time()
+    
+    # Set defaults if not provided
+    if start_time is None:
+        start_time = current_time - (24 * 3600)  # 24 hours ago
+    
+    if end_time is None:
+        end_time = current_time
+    
+    # Validate timestamps
+    if start_time >= end_time:
+        raise ValidationError("Start time must be before end time")
+    
+    if start_time < current_time - (30 * 24 * 3600):  # 30 days ago
+        raise ValidationError("Start time cannot be more than 30 days ago")
+    
+    if end_time > current_time:
+        raise ValidationError("End time cannot be in the future")
+    
+    return float(start_time), float(end_time)
+
+
 # Dependency aliases for backward compatibility
 DatabaseDep = Depends(get_database_manager)
 CacheDep = Depends(get_cache_manager)

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..database import DatabaseManager
 from ..cache import CacheManager
-from ..dependencies import DatabaseDep, CacheDep, LimitDep, HoursDep
+from ..dependencies import DatabaseDep, CacheDep, LimitDep, HoursDep, validate_timestamp_range
 from ..models import (
     EmployeeStatsResponse,
     EmployeeViolationsResponse,
@@ -95,8 +95,10 @@ async def get_employee_stats(
         
     except Exception as e:
         logger.error(f"Error retrieving employee stats: {e}")
-        return create_error_json_response(message=
-            message="Failed to retrieve employee statistics", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
+        return create_error_json_response(
+            message="Failed to retrieve employee statistics",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -111,6 +113,7 @@ async def get_employee_violations(
     start_time: Optional[float] = Query(None, description="Start timestamp filter"),
     end_time: Optional[float] = Query(None, description="End timestamp filter"),
     limit: int = LimitDep,
+    hours: int = HoursDep,
     db: DatabaseManager = DatabaseDep,
     cache: CacheManager = CacheDep
 ) -> dict:
@@ -142,7 +145,7 @@ async def get_employee_violations(
         face_window = int(settings.face_detection_window)
         
         # Generate cache key
-        cache_key = CacheKeys.employee_violations(employee_name, start_time, end_time, limit)
+        cache_key = CacheKeys.employee_violations(employee_name, limit, hours)
         
         # Try to get from cache first
         cached_data = await cache.get(cache_key)
@@ -223,11 +226,10 @@ async def get_employee_violations(
         raise
     except Exception as e:
         logger.error(f"Error retrieving violations for employee {employee_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=
-                f"Failed to retrieve violations for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve violations for employee {employee_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -387,11 +389,10 @@ async def get_employee_activity(
         
     except Exception as e:
         logger.error(f"Error retrieving activity for employee {employee_name}: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=
-                f"Failed to retrieve activity for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message=f"Failed to retrieve activity for employee {employee_name}",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -467,18 +468,17 @@ async def search_employees(
         await cache.set(cache_key, search_results, 300)  # 5 minute cache
         logger.debug(f"Cached employee search: {cache_key}")
         
-        return JSONResponse(
-            content=create_json_response(data=search_results, message=f"Found {len(search_results)} employees matching '{query}'"),
-            status_code=status.HTTP_200_OK
+        return create_json_response(
+            data=search_results,
+            message=f"Found {len(search_results)} employees matching '{query}'"
         )
         
     except Exception as e:
         logger.error(f"Error searching employees: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=
-                "Failed to search employees", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message="Failed to search employees",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 
@@ -524,11 +524,10 @@ async def clear_employee_cache(
         
     except Exception as e:
         logger.error(f"Error clearing employee cache: {e}")
-        return JSONResponse(
-            content=create_error_json_response(message=
-                "Failed to clear employee cache", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
-            ),
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        return create_error_json_response(
+            message="Failed to clear employee cache",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            details={"error": str(e)}
         )
 
 

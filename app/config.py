@@ -259,6 +259,11 @@ class Settings(BaseSettings):
         return self.database.pool_size
     
     @property
+    def thumbnail_window(self) -> int:
+        """Get thumbnail window for backward compatibility."""
+        return 5  # 5 seconds window for thumbnail matching
+    
+    @property
     def redis_host(self) -> str:
         """Get Redis host for backward compatibility."""
         return self.cache.host
