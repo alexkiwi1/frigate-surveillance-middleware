@@ -264,6 +264,26 @@ class Settings(BaseSettings):
         return 5  # 5 seconds window for thumbnail matching
     
     @property
+    def cache_ttl_employee_violations(self) -> int:
+        """Get cache TTL for employee violations."""
+        return 300  # 5 minutes
+    
+    @property
+    def face_detection_window(self) -> int:
+        """Get face detection window for backward compatibility."""
+        return 300  # 5 minutes
+    
+    @property
+    def high_activity_threshold(self) -> int:
+        """Get high activity threshold for backward compatibility."""
+        return 100  # detections per hour
+    
+    @property
+    def medium_activity_threshold(self) -> int:
+        """Get medium activity threshold for backward compatibility."""
+        return 50  # detections per hour
+    
+    @property
     def redis_host(self) -> str:
         """Get Redis host for backward compatibility."""
         return self.cache.host

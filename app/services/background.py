@@ -167,7 +167,7 @@ class BackgroundTaskManager:
                 
                 # Cache individual camera summaries
                 for summary in camera_summaries:
-                    camera_cache_key = CacheKeys.camera_summary(summary['camera'])
+                    camera_cache_key = CacheKeys.camera_summary()
                     await self.cache_manager.set(
                         camera_cache_key,
                         summary,

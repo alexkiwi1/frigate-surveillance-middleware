@@ -311,10 +311,7 @@ class EmployeeQueries:
             CONCAT('{settings.video_api_base_url}/clip/', ev.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.timestamp, '-', ev.source_id) as snapshot_url
         FROM employee_violations ev
-        LEFT JOIN reviewsegment rs ON 
-            rs.camera = ev.camera 
-            AND ABS(rs.start_time - ev.timestamp) < {settings.thumbnail_window}
-        ORDER BY ev.timestamp, ev.camera, ev.timestamp DESC
+        ORDER BY ev.timestamp DESC
         LIMIT {limit}
         """
         

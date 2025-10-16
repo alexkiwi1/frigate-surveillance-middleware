@@ -226,10 +226,7 @@ async def get_employee_violations(
         raise
     except Exception as e:
         logger.error(f"Error retrieving violations for employee {employee_name}: {e}")
-        return create_error_json_response(
-            message=f"Failed to retrieve violations for employee {employee_name}",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"error": str(e)}
+        return create_error_json_response(message=f"Failed to retrieve violations for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
         )
 
 
@@ -389,10 +386,7 @@ async def get_employee_activity(
         
     except Exception as e:
         logger.error(f"Error retrieving activity for employee {employee_name}: {e}")
-        return create_error_json_response(
-            message=f"Failed to retrieve activity for employee {employee_name}",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"error": str(e)}
+        return create_error_json_response(message=f"Failed to retrieve activity for employee {employee_name}", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
         )
 
 
@@ -475,10 +469,7 @@ async def search_employees(
         
     except Exception as e:
         logger.error(f"Error searching employees: {e}")
-        return create_error_json_response(
-            message="Failed to search employees",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"error": str(e)}
+        return create_error_json_response(message="Failed to search employees", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
         )
 
 
@@ -524,10 +515,7 @@ async def clear_employee_cache(
         
     except Exception as e:
         logger.error(f"Error clearing employee cache: {e}")
-        return create_error_json_response(
-            message="Failed to clear employee cache",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            details={"error": str(e)}
+        return create_error_json_response(message="Failed to clear employee cache", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, details={"error": str(e)}
         )
 
 
