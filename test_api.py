@@ -159,16 +159,16 @@ def main():
     # WebSocket Tests (basic connectivity)
     print("🔌 WEBSOCKET API")
     print("-" * 20)
-    test_endpoint("GET", "/ws/broadcast", "WebSocket broadcast endpoint", expected_status=426, base_url=BASE_URL)  # 426 = Upgrade Required
-    test_endpoint("GET", "/ws/status", "WebSocket status endpoint", expected_status=426, base_url=BASE_URL)  # 426 = Upgrade Required
+    test_endpoint("POST", "/ws/broadcast?message_type=test&target=all", "WebSocket broadcast endpoint", base_url=BASE_URL)  # POST endpoint for broadcasting
+    test_endpoint("GET", "/ws/status", "WebSocket status endpoint", base_url=BASE_URL)  # GET endpoint for status
     
     # Admin API Tests
     print("⚙️ ADMIN API")
     print("-" * 15)
     test_endpoint("POST", "/api/admin/restart-task/violation_polling", "Restart violation polling task", base_url=BASE_URL)
-    test_endpoint("GET", "/api/violations/cache", "Violations cache info", base_url=BASE_URL)
-    test_endpoint("GET", "/api/employees/cache", "Employees cache info", base_url=BASE_URL)
-    test_endpoint("GET", "/api/cameras/cache", "Cameras cache info", base_url=BASE_URL)
+    test_endpoint("DELETE", "/api/violations/cache", "Clear violations cache", base_url=BASE_URL)
+    test_endpoint("DELETE", "/api/employees/cache", "Clear employees cache", base_url=BASE_URL)
+    test_endpoint("DELETE", "/api/cameras/cache", "Clear cameras cache", base_url=BASE_URL)
     
     # Performance Tests
     print("⚡ PERFORMANCE TESTS")

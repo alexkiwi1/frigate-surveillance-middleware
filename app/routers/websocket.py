@@ -520,7 +520,8 @@ async def broadcast_message(
     try:
         message = WebSocketMessage(
             type=message_type,
-            data=data
+            data=data,
+            timestamp=str(get_current_timestamp())
         )
         
         if target == "violations":
