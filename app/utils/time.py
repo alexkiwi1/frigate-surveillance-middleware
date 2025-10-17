@@ -186,6 +186,40 @@ def get_relative_time_string(timestamp: Union[float, int, None]) -> Optional[str
         return f"{days} day{'s' if days != 1 else ''} ago"
 
 
+def calculate_time_duration(start_time: Union[float, int, None] = None, 
+                          end_time: Union[float, int, None] = None,
+                          duration_seconds: Union[int, None] = None) -> str:
+    """
+    Calculate duration and return formatted string.
+    
+    Args:
+        start_time: Start timestamp (if calculating from two timestamps)
+        end_time: End timestamp (if calculating from two timestamps)
+        duration_seconds: Duration in seconds (if providing directly)
+        
+    Returns:
+        Formatted duration string (e.g., "2:30:45", "1:15", "0:05")
+    """
+    if duration_seconds is not None:
+        total_seconds = int(duration_seconds)
+    elif start_time is not None and end_time is not None:
+        total_seconds = int(end_time - start_time)
+    else:
+        return "0:00"
+    
+    if total_seconds < 0:
+        return "0:00"
+    
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    else:
+        return f"{minutes}:{seconds:02d}"
+
+
 # Time constants for easy reference
 SECONDS_IN_MINUTE = 60
 SECONDS_IN_HOUR = 3600

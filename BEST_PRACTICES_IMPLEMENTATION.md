@@ -331,3 +331,4 @@ The Frigate Dashboard Middleware now follows all FastAPI best practices from the
 
 
 
+

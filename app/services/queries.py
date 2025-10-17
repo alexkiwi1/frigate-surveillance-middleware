@@ -48,23 +48,120 @@ class ViolationQueries:
         
         camera_filter = f"AND camera = '{camera}'" if camera else ""
         
-        # Simplified query for better performance - removed complex joins
+        # Query with desk-based employee identification + face verification
         query = f"""
+        WITH violation_zones AS (
+            -- Get phone violations with their zones
+            SELECT 
+                p.timestamp,
+                p.camera,
+                p.source_id as id,
+                p.data->'zones' as zones
+            FROM timeline p
+            WHERE p.data->>'label' = 'cell phone'
+            AND p.timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
+            {camera_filter}
+        ),
+        desk_assignments AS (
+            -- Official desk assignments (corrected)
+            SELECT * FROM (VALUES
+                ('desk_1', 'Safia Imtiaz'),
+                ('desk_2', 'Kinza Amin'),
+                ('desk_3', 'Aiman Jawaid'),
+                ('desk_4', 'Nimra Ghulam Fareed'),
+                ('desk_5', 'Summaiya Khan'),
+                ('desk_6', 'Arifa Dhari'),
+                ('desk_7', 'Khalid Ahmed'),
+                ('desk_9', 'Muhammad Arsalan'),
+                ('desk_10', 'Saadullah Khoso'),
+                ('desk_11', 'Muhammad Taha'),
+                ('desk_12', 'Muhammad Awais'),
+                ('desk_13', 'Nabeel Bhatti'),
+                ('desk_14', 'Abdul Qayoom'),
+                ('desk_15', 'Sharjeel Abbas'),
+                ('desk_16', 'Saad Bin Salman'),
+                ('desk_17', 'Sufiyan Ahmed'),
+                ('desk_18', 'Muhammad Qasim'),
+                ('desk_19', 'Sameer Panhwar'),
+                ('desk_20', 'Bilal Soomro'),
+                ('desk_21', 'Saqlain Murtaza'),
+                ('desk_22', 'Syed Hussain Ali Kazi'),
+                ('desk_23', 'Saad Khan'),
+                ('desk_24', 'Kabeer Rajput'),
+                ('desk_25', 'Mehmood Memon'),
+                ('desk_26', 'Ali Habib'),
+                ('desk_27', 'Bhamar Lal'),
+                ('desk_28', 'Atban Bin Aslam'),
+                ('desk_29', 'Sadique Khowaja'),
+                ('desk_30', 'Syed Awwab'),
+                ('desk_31', 'Samad Siyal'),
+                ('desk_32', 'Wasi Khan'),
+                ('desk_33', 'Kashif Raza'),
+                ('desk_34', 'Wajahat Imam'),
+                ('desk_35', 'Bilal Ahmed'),
+                ('desk_36', 'Muhammad Usman'),
+                ('desk_37', 'Arsalan Khan'),
+                ('desk_38', 'Abdul Kabeer'),
+                ('desk_39', 'Gian Chand'),
+                ('desk_40', 'Ayan Arain'),
+                ('desk_41', 'Zaib Ali Mughal'),
+                ('desk_42', 'Abdul Wassay'),
+                ('desk_43', 'Aashir Ali'),
+                ('desk_44', 'Ali Raza'),
+                ('desk_45', 'Muhammad Tabish'),
+                ('desk_46', 'Farhan Ali'),
+                ('desk_47', 'Tahir Ahmed'),
+                ('desk_48', 'Zain Nawaz'),
+                ('desk_49', 'Ali Memon'),
+                ('desk_50', 'Muhammad Wasif Samoon'),
+                ('desk_52', 'Sumair Hussain'),
+                ('desk_53', 'Natasha Batool'),
+                ('desk_55', 'Preet Nuckrich'),
+                ('desk_59', 'Muhammad Uzair'),
+                ('desk_62', 'Muhammad Roshan'),
+                ('desk_58', 'Konain Mustafa'),
+                ('desk_61', 'Hira Memon'),
+                ('desk_63', 'Syed Safwan Ali Hashmi'),
+                ('desk_64', 'Arbaz'),
+                ('desk_65', 'Muhammad Shakir'),
+                ('desk_66', 'Muneeb Intern')
+            ) AS t(desk_zone, employee_name)
+        )
         SELECT 
-            timestamp,
-            camera,
-            source_id as id,
-            data->'zones' as zones,
-            'Unknown' as employee_name,
-            0.0 as confidence,
-            CONCAT('{settings.video_api_base_url}/thumb/', source_id) as thumbnail_url,
-            CONCAT('{settings.video_api_base_url}/clip/', source_id) as video_url,
-            CONCAT('{settings.video_api_base_url}/snapshot/', camera, '/', source_id) as snapshot_url
-        FROM timeline
-        WHERE data->>'label' = 'cell phone'
-        AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
-        {camera_filter}
-        ORDER BY timestamp DESC
+            v.timestamp,
+            v.camera,
+            v.id,
+            v.zones,
+            COALESCE(
+                da.employee_name,  -- ONLY desk assignment
+                'Unknown'          -- No desk assignment = Unknown
+            ) as employee_name,
+            COALESCE(
+                CASE 
+                    WHEN da.employee_name IS NOT NULL THEN 1.0  -- High confidence for desk assignment
+                    ELSE 0.0
+                END,
+                0.0
+            ) as confidence,
+            NULL as thumbnail_url,
+            NULL as video_url,
+            CONCAT('{settings.video_api_base_url}/snapshot/', v.camera, '/', v.id) as snapshot_url
+        FROM violation_zones v
+        LEFT JOIN (
+            -- Find desk assignment for violation
+            SELECT DISTINCT ON (vz.id)
+                vz.id,
+                da.employee_name
+            FROM violation_zones vz
+            CROSS JOIN LATERAL (
+                SELECT 
+                    jsonb_array_elements_text(vz.zones) as desk_zone
+            ) desk_list
+            JOIN desk_assignments da ON desk_list.desk_zone = da.desk_zone
+            WHERE desk_list.desk_zone LIKE 'desk_%'
+        ) da ON da.id = v.id
+        -- Face verification removed - using ONLY desk assignments
+        ORDER BY v.timestamp DESC
         LIMIT {limit}
         """
         
@@ -199,7 +296,7 @@ class EmployeeQueries:
                 COUNT(DISTINCT camera) as cameras_visited,
                 MAX(timestamp) as last_seen
             FROM timeline
-            WHERE source = 'tracked_object'
+            WHERE data->>'label' = 'person'
             AND timestamp > (EXTRACT(EPOCH FROM NOW()) - {hours_seconds})
             AND data->'sub_label' IS NOT NULL
             AND data->'sub_label'->>0 IS NOT NULL
@@ -218,7 +315,7 @@ class EmployeeQueries:
                 FROM timeline p
                 LEFT JOIN timeline f ON 
                     f.camera = p.camera 
-                    AND f.source = 'tracked_object'
+                    AND f.data->>'label' = 'person'
                     AND f.data->'sub_label' IS NOT NULL
                     AND f.data->'sub_label'->>0 IS NOT NULL
                     AND ABS(f.timestamp - p.timestamp) < {face_window}
@@ -289,14 +386,16 @@ class EmployeeQueries:
                 p.source_id,
                 p.data->'zones' as zones,
                 (f.data->'sub_label'->>0) as employee_name,
-                f.data->>'score' as confidence
+                (f.data->'sub_label'->>1)::float as confidence
             FROM timeline p
             LEFT JOIN timeline f ON 
                 f.camera = p.camera 
-                AND f.source = 'tracked_object'
+                AND f.data->>'label' = 'person'
+                AND f.data->'sub_label' IS NOT NULL
+                AND f.data->'sub_label'->>0 IS NOT NULL
                 AND ABS(f.timestamp - p.timestamp) < {face_window}
             WHERE p.data->>'label' = 'cell phone'
-            AND f.data->>'sub_label' = '{employee_name}'
+            AND f.data->'sub_label'->>0 = '{employee_name}'
             {time_filter}
             ORDER BY p.timestamp, p.camera, ABS(f.timestamp - p.timestamp)
         )
@@ -306,7 +405,7 @@ class EmployeeQueries:
             ev.source_id as id,
             ev.zones,
             ev.employee_name,
-            COALESCE(ev.confidence::float, 0.0) as confidence,
+            COALESCE(ev.confidence, 0.0) as confidence,
             CONCAT('{settings.video_api_base_url}/thumb/', ev.source_id) as thumbnail_url,
             CONCAT('{settings.video_api_base_url}/clip/', ev.source_id) as video_url,
             CONCAT('{settings.video_api_base_url}/snapshot/', ev.camera, '/', ev.source_id) as snapshot_url

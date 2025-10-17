@@ -171,3 +171,4 @@ def run_snapshot_test():
 
 if __name__ == "__main__":
     run_snapshot_test()
+
